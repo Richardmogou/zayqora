@@ -1,0 +1,27 @@
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-zayqora}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-zayqora_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-zayqora}
+    ports: ["5433:5432"]
+    volumes: [zayqora_pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-zayqora} -d $${POSTGRES_DB:-zayqora}"]
+      interval: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-zayqora}:${POSTGRES_PASSWORD:-zayqora_dev}@db:5432/${POSTGRES_DB:-zayqora}
+      CORS_ORIGINS: http://localhost:3000
+    ports: ["8000:8000"]
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  zayqora_pgdata:
