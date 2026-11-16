@@ -16,10 +16,11 @@ out/
 *.tsbuildinfo
 npm-debug.log*
 
-# Environment (garder uniquement le modèle .env.example)
+# Environment (garder uniquement les modèles .example)
 .env
 .env.*
 !.env.example
+!.env.local.example
 
 # Editors & OS
 .idea/
