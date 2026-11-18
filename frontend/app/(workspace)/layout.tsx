@@ -13,7 +13,7 @@ export default async function WorkspaceLayout({ children }: { children: React.Re
     <div className="flex min-h-screen">
       <Sidebar restaurantName={membership?.restaurant_name ?? "ZAYQORA"} />
       <div className="flex min-w-0 flex-1 flex-col">
-        <Topbar name={me.user.full_name} role={role} />
+        <Topbar name={me.user.full_name} role={role} isPlatformAdmin={me.user.is_platform_admin} />
         <main className="flex-1 p-4 md:p-6">{children}</main>
       </div>
     </div>
