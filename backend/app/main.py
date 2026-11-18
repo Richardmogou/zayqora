@@ -1,4 +1,5 @@
 from urllib.parse import urlsplit
+import uuid
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,15 +26,26 @@ def _origin_of(value: str | None) -> str | None:
 
 
 @app.middleware("http")
-async def reject_foreign_origins(request: Request, call_next):
-    """Protection CSRF : une requête qui modifie des données doit venir d'une origine autorisée.
-    Sans en-tête Origin/Referer (curl, webhooks, tests), la requête est acceptée ; le cookie SameSite=Lax
-    n'est de toute façon pas envoyé lors d'une requête POST venant d'un autre site."""
+async def security_and_correlation_middleware(request: Request, call_next):
+    request_id = request.headers.get("x-request-id") or str(uuid.uuid4())
     if request.method in _UNSAFE:
         origin = _origin_of(request.headers.get("origin")) or _origin_of(request.headers.get("referer"))
         if origin is not None and origin not in settings.allowed_origins:
-            return JSONResponse({"detail": "Origin not allowed"}, status_code=403)
-    return await call_next(request)
+            response = JSONResponse({"detail": "Origin not allowed"}, status_code=403)
+            response.headers["X-Request-Id"] = request_id
+            response.headers["X-Content-Type-Options"] = "nosniff"
+            response.headers["X-Frame-Options"] = "DENY"
+            return response
+
+    response = await call_next(request)
+    response.headers["X-Request-Id"] = request_id
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+    if settings.is_production:
+        response.headers.setdefault("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
+    return response
 
 
 app.include_router(api_router)
