@@ -34,9 +34,9 @@ export default function HomePage() {
   ];
 
   return (
-    <div className="flex flex-1 min-h-0 flex-col justify-between overflow-hidden">
-      <section className="relative flex flex-1 min-h-0 w-full items-center overflow-hidden">
-        <div className="pointer-events-none absolute inset-y-0 right-0 w-full lg:w-[64%]">
+    <div className="flex flex-1 min-h-0 flex-col justify-between lg:overflow-hidden">
+      <section className="relative flex min-h-[340px] flex-1 w-full items-center overflow-hidden py-10 lg:min-h-0 lg:py-0">
+        <div className="pointer-events-none absolute inset-y-0 right-0 w-full opacity-35 lg:w-[64%] lg:opacity-100">
           <img
             src="/images/p10-hero-fade.png"
             alt="ZAYQORA restaurant dining table"
@@ -44,16 +44,16 @@ export default function HomePage() {
           />
         </div>
 
-        <div className="relative z-10 mx-auto flex h-full w-full max-w-[1520px] items-center px-6 lg:px-12">
+        <div className="relative z-10 mx-auto flex h-full w-full max-w-[1520px] items-center px-4 sm:px-6 lg:px-12">
           <div className="max-w-xl">
-            <h1 className="text-4xl font-bold leading-[1.06] tracking-tight sm:text-[46px] xl:text-[50px]">
+            <h1 className="text-3xl font-bold leading-[1.06] tracking-tight sm:text-[46px] xl:text-[50px]">
               {L("Manage your", "Gérez votre")}
               <br />
               {L("restaurant with", "restaurant avec")}
               <br />
               {L("simplicity", "simplicité")}
             </h1>
-            <p className="mt-3.5 text-lg leading-snug text-muted-foreground">
+            <p className="mt-3.5 text-base leading-snug text-muted-foreground sm:text-lg">
               {L(
                 "ZAYQORA brings together orders, menu and",
                 "ZAYQORA réunit commandes, menu et"
@@ -79,13 +79,13 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section className="mx-auto flex h-[21vh] min-h-[132px] w-full max-w-[1520px] shrink-0 items-center px-6 lg:px-12">
-        <div className="grid h-[82%] w-full gap-5 md:grid-cols-3">
+      <section className="mx-auto flex w-full max-w-[1520px] shrink-0 items-center px-4 py-6 sm:px-6 lg:h-[21vh] lg:min-h-[132px] lg:px-12 lg:py-0">
+        <div className="grid w-full gap-4 md:grid-cols-3 lg:h-[82%] lg:gap-5">
           {featureCards.map((card) => (
             <Link
               key={card.title}
               href={card.href}
-              className={`group flex flex-col justify-center rounded-2xl border px-7 py-4 transition hover:shadow-md ${card.bgClass}`}
+              className={`group flex flex-col justify-center rounded-2xl border px-6 py-4 transition hover:shadow-md lg:px-7 ${card.bgClass}`}
             >
               <h2 className="text-xl font-bold xl:text-2xl">{card.title}</h2>
               <p className="mt-1.5 whitespace-pre-line text-sm leading-snug text-[#42524C] xl:text-[15px]">
@@ -96,7 +96,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section className="relative flex h-[19.5vh] min-h-[120px] shrink-0 flex-col items-center justify-center overflow-hidden bg-sidebar text-center text-sidebar-foreground">
+      <section className="relative flex min-h-[140px] shrink-0 flex-col items-center justify-center overflow-hidden bg-sidebar py-8 text-center text-sidebar-foreground lg:h-[19.5vh] lg:min-h-[120px] lg:py-0">
         <img
           src="/images/arch-left.png"
           alt=""
