@@ -290,3 +290,59 @@ def test_manager_cannot_invite(client, db):
         headers={"X-Restaurant-Id": str(r.id)},
     )
     assert res.status_code == 403
+
+
+def test_partial_update_assigns_table_label(client, db):
+    r = _setup(db, client)
+    res_id = _create(client, r.id).json()["id"]
+    res = client.patch(
+        f"/api/v1/reservations/{res_id}",
+        json={"table_label": "Table 8"},
+        headers={"X-Restaurant-Id": str(r.id)},
+    )
+    assert res.status_code == 200
+    assert res.json()["table_label"] == "Table 8"
+    assert res.json()["customer_name"] == "Alice"
+
+
+def test_waiter_can_seat_and_complete_but_not_confirm(client, db):
+    r = make_restaurant(db, "bistro", status="active")
+    owner = make_user(db, "owner@example.com")
+    waiter = make_user(db, "waiter@example.com")
+    add_member(db, r, owner, "owner")
+    add_member(db, r, waiter, "waiter")
+
+    login(client, "owner@example.com")
+    res_id = _create(client, r.id).json()["id"]
+
+    login(client, "waiter@example.com")
+    cannot_confirm = client.patch(
+        f"/api/v1/reservations/{res_id}/status",
+        json={"status": "confirmed"},
+        headers={"X-Restaurant-Id": str(r.id)},
+    )
+    assert cannot_confirm.status_code == 403
+
+    login(client, "owner@example.com")
+    client.patch(
+        f"/api/v1/reservations/{res_id}/status",
+        json={"status": "confirmed"},
+        headers={"X-Restaurant-Id": str(r.id)},
+    )
+
+    login(client, "waiter@example.com")
+    seat_res = client.patch(
+        f"/api/v1/reservations/{res_id}/status",
+        json={"status": "seated"},
+        headers={"X-Restaurant-Id": str(r.id)},
+    )
+    assert seat_res.status_code == 200
+    assert seat_res.json()["status"] == "seated"
+
+    complete_res = client.patch(
+        f"/api/v1/reservations/{res_id}/status",
+        json={"status": "completed"},
+        headers={"X-Restaurant-Id": str(r.id)},
+    )
+    assert complete_res.status_code == 200
+    assert complete_res.json()["status"] == "completed"
