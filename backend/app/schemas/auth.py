@@ -54,6 +54,7 @@ class RestaurantOut(BaseModel):
     slug: str
     name: str
     status: str
+    plan: str = "growth"
     country: str
     currency: str
     timezone: str

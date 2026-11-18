@@ -49,6 +49,7 @@ class Restaurant(Base):
     slug: Mapped[str] = mapped_column(String(80), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(200))
     status: Mapped[str] = mapped_column(String(20), default="pending")  # pending | active | suspended
+    plan: Mapped[str] = mapped_column(String(30), default="growth", server_default="growth")  # starter | growth | professional | enterprise
     country: Mapped[str] = mapped_column(String(2), default="PK")
     currency: Mapped[str] = mapped_column(String(3), default="PKR")
     timezone: Mapped[str] = mapped_column(String(64), default="Asia/Karachi")  # identifiant IANA
