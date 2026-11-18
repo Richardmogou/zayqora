@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -6,12 +7,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
-from app.models import AuditLog, MenuItem, Modifier, ModifierGroup, Order, OrderLine, Restaurant
+from app.models import AuditLog, Coupon, MenuItem, Modifier, ModifierGroup, Order, OrderLine, Restaurant
 from app.permissions.deps import TenantContext, require_roles
 from app.permissions.roles import Role
 from app.schemas.orders import (
     ALL_STATUSES, STATUS_TRANSITIONS,
-    OrderIn, OrderListOut, OrderOut, OrderStatusIn,
+    OrderCancelIn, OrderIn, OrderListOut, OrderOut, OrderStatusIn,
 )
 from app.services.notifications import notify_restaurant_staff
 
@@ -115,6 +116,49 @@ def _build_lines(db: Session, restaurant_id: uuid.UUID, line_inputs) -> list[Ord
     return lines
 
 
+def evaluate_coupon(
+    db: Session,
+    restaurant_id: uuid.UUID,
+    raw_code: str | None,
+    subtotal_minor: int,
+    delivery_fee_minor: int,
+) -> tuple[Coupon | None, int]:
+    if not raw_code or not raw_code.strip():
+        return None, 0
+    code = raw_code.strip().upper()
+    coupon = db.scalar(
+        select(Coupon).where(
+            Coupon.restaurant_id == restaurant_id,
+            Coupon.code == code,
+            Coupon.is_active.is_(True),
+        )
+    )
+    if not coupon:
+        raise HTTPException(status_code=422, detail=f"Promo code '{code}' is invalid or inactive")
+    now = datetime.now(timezone.utc)
+    if coupon.expires_at is not None:
+        exp = coupon.expires_at if coupon.expires_at.tzinfo else coupon.expires_at.replace(tzinfo=timezone.utc)
+        if exp <= now:
+            raise HTTPException(status_code=422, detail=f"Promo code '{code}' has expired")
+    if coupon.max_uses is not None and coupon.used_count >= coupon.max_uses:
+        raise HTTPException(status_code=422, detail=f"Promo code '{code}' has reached its redemption limit")
+    if subtotal_minor < coupon.min_order_minor:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Promo code '{code}' requires a minimum subtotal of {coupon.min_order_minor / 100:.2f}",
+        )
+
+    if coupon.discount_type == "percentage":
+        discount = round(subtotal_minor * min(max(coupon.discount_value, 0), 100) / 100)
+    elif coupon.discount_type == "fixed":
+        discount = min(coupon.discount_value, subtotal_minor)
+    elif coupon.discount_type == "free_delivery":
+        discount = delivery_fee_minor
+    else:
+        discount = 0
+    return coupon, max(discount, 0)
+
+
 # ---------------------------------------------------------------------------
 # Workspace — list & detail
 # ---------------------------------------------------------------------------
@@ -187,6 +231,42 @@ def update_status(
     return _attach_lines(db, order)
 
 
+@router.post("/{order_id}/cancel", response_model=OrderOut)
+def cancel_order(
+    order_id: uuid.UUID,
+    body: OrderCancelIn,
+    ctx: TenantContext = Depends(require_roles(*_EDITORS)),
+    db: Session = Depends(get_db),
+):
+    order = _load_order(db, order_id, ctx.restaurant.id)
+    if "cancelled" not in STATUS_TRANSITIONS.get(order.status, set()):
+        raise HTTPException(status_code=409, detail=f"Cannot cancel order in '{order.status}' state")
+    order.status = "cancelled"
+    order.cancellation_reason = body.reason.strip()
+    notify_restaurant_staff(
+        db,
+        restaurant_id=ctx.restaurant.id,
+        event_type="order.status_changed",
+        title="Order cancelled",
+        body=f"Order #{str(order.id)[:8].upper()} was cancelled ({order.cancellation_reason}).",
+        entity_type="order",
+        entity_id=str(order.id),
+        dedupe_key=f"order:{order.id}:status:cancelled",
+        data={"status": "cancelled", "reason": order.cancellation_reason},
+    )
+    db.add(AuditLog(
+        actor_user_id=ctx.user.id,
+        restaurant_id=ctx.restaurant.id,
+        action="order.cancel",
+        entity_type="order",
+        entity_id=str(order.id),
+        data={"reason": order.cancellation_reason},
+    ))
+    db.commit()
+    db.refresh(order)
+    return _attach_lines(db, order)
+
+
 # ---------------------------------------------------------------------------
 # Public storefront — create order
 # ---------------------------------------------------------------------------
@@ -218,7 +298,10 @@ def create_order(
 
     subtotal = sum(l.line_total_minor for l in lines)
     delivery_fee = _DELIVERY_FEE_MINOR if body.service_mode == "delivery" else 0
-    total = subtotal + delivery_fee
+    coupon, discount_minor = evaluate_coupon(db, restaurant.id, body.coupon_code, subtotal, delivery_fee)
+    total = max(subtotal + delivery_fee - discount_minor, 0)
+    if coupon is not None:
+        coupon.used_count += 1
 
     order = Order(
         idempotency_key=body.idempotency_key,
@@ -232,8 +315,10 @@ def create_order(
         payment_method=body.payment_method,
         payment_status="pending",
         subtotal_minor=subtotal,
+        discount_minor=discount_minor,
         delivery_fee_minor=delivery_fee,
         total_minor=total,
+        coupon_code=coupon.code if coupon else None,
         special_instructions=body.special_instructions,
         status="received",
     )
@@ -273,4 +358,40 @@ def get_public_order(order_id: uuid.UUID, slug: str = Query(...), db: Session = 
     order = db.scalar(select(Order).where(Order.id == order_id, Order.restaurant_id == restaurant.id))
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
+    return _attach_lines(db, order)
+
+
+@public_router.post("/{order_id}/cancel", response_model=OrderOut)
+def cancel_public_order(
+    order_id: uuid.UUID,
+    body: OrderCancelIn,
+    slug: str = Query(...),
+    db: Session = Depends(get_db),
+):
+    restaurant = db.scalar(select(Restaurant).where(Restaurant.slug == slug, Restaurant.status == "active"))
+    if not restaurant:
+        raise HTTPException(status_code=404, detail="Restaurant not found")
+    order = db.scalar(select(Order).where(Order.id == order_id, Order.restaurant_id == restaurant.id))
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if order.status not in {"received", "confirmed"}:
+        raise HTTPException(
+            status_code=409,
+            detail="Order can no longer be cancelled online once kitchen preparation has started",
+        )
+    order.status = "cancelled"
+    order.cancellation_reason = body.reason.strip()
+    notify_restaurant_staff(
+        db,
+        restaurant_id=restaurant.id,
+        event_type="order.status_changed",
+        title="Customer cancelled order",
+        body=f"Order #{str(order.id)[:8].upper()} was cancelled by customer ({order.cancellation_reason}).",
+        entity_type="order",
+        entity_id=str(order.id),
+        dedupe_key=f"order:{order.id}:status:cancelled",
+        data={"status": "cancelled", "reason": order.cancellation_reason},
+    )
+    db.commit()
+    db.refresh(order)
     return _attach_lines(db, order)

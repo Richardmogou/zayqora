@@ -29,12 +29,17 @@ class OrderIn(BaseModel):
     table_label: str | None = Field(default=None, max_length=50)
     delivery_address: str | None = None
     payment_method: str = Field(pattern="^(card|paypal|cash)$")
+    coupon_code: str | None = Field(default=None, max_length=40)
     special_instructions: str | None = None
     lines: list[OrderLineIn] = Field(min_length=1)
 
 
 class OrderStatusIn(BaseModel):
     status: str
+
+
+class OrderCancelIn(BaseModel):
+    reason: str = Field(default="Cancelled by request", min_length=2, max_length=300)
 
 
 class OrderLineOut(BaseModel):
@@ -61,9 +66,12 @@ class OrderOut(BaseModel):
     payment_method: str
     payment_status: str
     subtotal_minor: int
+    discount_minor: int = 0
     delivery_fee_minor: int
     total_minor: int
+    coupon_code: str | None = None
     status: str
+    cancellation_reason: str | None = None
     special_instructions: str | None
     created_at: datetime
     lines: list[OrderLineOut] = []
@@ -79,4 +87,5 @@ class OrderListOut(BaseModel):
     payment_status: str
     total_minor: int
     status: str
+    cancellation_reason: str | None = None
     created_at: datetime
