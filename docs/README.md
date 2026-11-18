@@ -49,7 +49,9 @@ pytest -v
 | [Day 4](progress/day-4.md) | Cart, checkout & orders: persisted cart store, server-side pricing, idempotency and order tracking |
 | [Day 5](progress/day-5.md) | Reservations & operations: availability engine, capacity locking, KDS board and staff notifications |
 | [Day 6](progress/day-6.md) | Admin & platform controls: live dashboard metrics, sales reports, customer CRM and VIRELEO super admin |
+| [Day 7](progress/day-7.md) | QA, security & deployment: E2E acceptance suite (124 tests), security headers, SEO, Docker and CI/CD |
 
 ## Architecture & Reference
 
 - [Day 1 Architecture Decisions](architecture/day-1-decisions.md)
+- [Deployment Guide & Operational Runbook](architecture/deployment-and-runbook.md)
