@@ -15,6 +15,7 @@ from app.schemas.reservations import (
     MemberInviteIn, MemberOut,
     PublicReservationIn, ReservationAvailabilityOut, ReservationBlockIn, ReservationBlockOut,
     ReservationIn, ReservationOut, ReservationSettingsIn, ReservationSettingsOut, ReservationStatusIn,
+    ReservationUpdateIn,
     RESERVATION_STATUSES, RESERVATION_TRANSITIONS,
 )
 from app.services.notifications import notify_restaurant_staff
@@ -24,6 +25,7 @@ members_router = APIRouter(prefix="/members", tags=["team"])
 public_router = APIRouter(prefix="/public/reservations", tags=["public"])
 
 _EDITORS = (Role.OWNER, Role.MANAGER)
+_STATUS_EDITORS = (Role.OWNER, Role.MANAGER, Role.WAITER)
 _VIEWERS = (Role.OWNER, Role.MANAGER, Role.CASHIER, Role.WAITER)
 
 
@@ -345,13 +347,14 @@ def get_reservation(
 @router.patch("/{res_id}", response_model=ReservationOut)
 def update_reservation(
     res_id: uuid.UUID,
-    body: ReservationIn,
+    body: ReservationUpdateIn,
     ctx: TenantContext = Depends(require_roles(*_EDITORS)),
     db: Session = Depends(get_db),
 ):
     res = _get_reservation(db, res_id, ctx.restaurant.id)
-    for field, value in body.model_dump(exclude_none=True).items():
-        setattr(res, field, value)
+    for field, value in body.model_dump(exclude_unset=True).items():
+        if value is not None or field in {"customer_phone", "customer_email", "table_label", "notes"}:
+            setattr(res, field, value)
     db.add(AuditLog(actor_user_id=ctx.user.id, restaurant_id=ctx.restaurant.id,
                     action="reservation.update", entity_type="reservation", entity_id=str(res_id)))
     db.commit()
@@ -363,11 +366,13 @@ def update_reservation(
 def update_reservation_status(
     res_id: uuid.UUID,
     body: ReservationStatusIn,
-    ctx: TenantContext = Depends(require_roles(*_EDITORS)),
+    ctx: TenantContext = Depends(require_roles(*_STATUS_EDITORS)),
     db: Session = Depends(get_db),
 ):
     if body.status not in RESERVATION_STATUSES:
         raise HTTPException(status_code=422, detail=f"Invalid status. Must be one of: {sorted(RESERVATION_STATUSES)}")
+    if ctx.member.role == Role.WAITER.value and body.status not in {"seated", "completed"}:
+        raise HTTPException(status_code=403, detail="Waiters can only mark reservations as seated or completed")
     res = _get_reservation(db, res_id, ctx.restaurant.id)
     allowed = RESERVATION_TRANSITIONS.get(res.status, set())
     if body.status not in allowed:
