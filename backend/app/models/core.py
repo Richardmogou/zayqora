@@ -2,7 +2,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -52,6 +52,23 @@ class Restaurant(Base):
     country: Mapped[str] = mapped_column(String(2), default="PK")
     currency: Mapped[str] = mapped_column(String(3), default="PKR")
     timezone: Mapped[str] = mapped_column(String(64), default="Asia/Karachi")  # identifiant IANA
+    reservation_capacity: Mapped[int] = mapped_column(Integer, default=40, server_default="40")
+    reservation_duration_minutes: Mapped[int] = mapped_column(Integer, default=90, server_default="90")
+    reservation_slot_interval_minutes: Mapped[int] = mapped_column(Integer, default=30, server_default="30")
+    reservation_buffer_minutes: Mapped[int] = mapped_column(Integer, default=15, server_default="15")
+    reservation_opening_hours: Mapped[dict] = mapped_column(
+        JSONB,
+        default=lambda: {
+            "0": [],
+            "1": [["12:00", "14:30"], ["19:00", "22:00"]],
+            "2": [["12:00", "14:30"], ["19:00", "22:00"]],
+            "3": [["12:00", "14:30"], ["19:00", "22:00"]],
+            "4": [["12:00", "14:30"], ["19:00", "22:00"]],
+            "5": [["12:00", "14:30"], ["19:00", "22:00"]],
+            "6": [["12:00", "14:30"], ["19:00", "22:00"]],
+        },
+        nullable=False,
+    )
     created_at: Mapped[datetime] = now_col()
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
