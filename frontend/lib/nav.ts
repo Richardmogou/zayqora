@@ -1,4 +1,4 @@
-import { BarChart3, CalendarCheck, LayoutDashboard, Settings, ShoppingBag, UtensilsCrossed, Users, type LucideIcon } from "lucide-react";
+import { BarChart3, Bell, CalendarCheck, ChefHat, LayoutDashboard, Settings, ShoppingBag, UtensilsCrossed, Users, type LucideIcon } from "lucide-react";
 
 export type NavItem = { href: string; key: string; icon: LucideIcon };
 
@@ -7,7 +7,9 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", key: "nav.dashboard", icon: LayoutDashboard },
   { href: "/menu", key: "nav.menu", icon: UtensilsCrossed },
   { href: "/orders", key: "nav.orders", icon: ShoppingBag },
+  { href: "/kitchen", key: "nav.kitchen", icon: ChefHat },
   { href: "/reservations", key: "nav.reservations", icon: CalendarCheck },
+  { href: "/notifications", key: "nav.notifications", icon: Bell },
   { href: "/customers", key: "nav.customers", icon: Users },
   { href: "/reports", key: "nav.reports", icon: BarChart3 },
   { href: "/settings", key: "nav.settings", icon: Settings },

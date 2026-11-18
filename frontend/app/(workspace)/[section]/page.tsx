@@ -4,7 +4,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { getL, getT } from "@/lib/i18n/server";
 
 // Écrans provisoires du menu : chacun sera remplacé par sa vraie page le jour prévu.
-const SECTIONS: Record<string, number> = { menu: 3, orders: 4, reservations: 5, customers: 6, reports: 6, settings: 2 };
+const SECTIONS: Record<string, number> = { customers: 6, reports: 6 };
 
 export default function SectionPlaceholder({ params }: { params: { section: string } }) {
   const day = SECTIONS[params.section];

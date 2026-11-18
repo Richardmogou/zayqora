@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -7,10 +8,12 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.db import get_db
 from app.core.rate_limit import limiter
-from app.core.security import burn_verification_time, hash_token, new_session_token, verify_password
-from app.models import AuditLog, Restaurant, RestaurantMember, User, UserSession
+from app.core.security import burn_verification_time, hash_password, hash_token, new_session_token, verify_password
+from app.models import AuditLog, Branch, Restaurant, RestaurantMember, User, UserSession
 from app.permissions.deps import get_current_user
-from app.schemas.auth import LoginIn, MembershipOut, MeOut, UserOut
+from app.schemas.auth import LoginIn, MembershipOut, MeOut, RegisterIn, UserOut
+
+_SLUG_RE = re.compile(r"[^a-z0-9]+")
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -36,6 +39,65 @@ def build_me(db: Session, user: User) -> MeOut:
             for m, r in rows
         ],
     )
+
+
+def _slugify(name: str) -> str:
+    return _SLUG_RE.sub("-", name.lower().strip()).strip("-")[:80]
+
+
+@router.post("/register", response_model=MeOut, status_code=201)
+def register(body: RegisterIn, request: Request, response: Response, db: Session = Depends(get_db)):
+    email = body.email.strip().lower()
+    if db.scalar(select(User).where(User.email == email)):
+        raise HTTPException(status_code=409, detail="Email already registered")
+
+    slug_base = _slugify(body.restaurant_name)
+    slug = slug_base
+    counter = 1
+    while db.scalar(select(Restaurant).where(Restaurant.slug == slug)):
+        slug = f"{slug_base}-{counter}"
+        counter += 1
+
+    user = User(
+        email=email,
+        full_name=body.full_name.strip(),
+        password_hash=hash_password(body.password),
+    )
+    db.add(user)
+    db.flush()
+
+    restaurant = Restaurant(
+        slug=slug,
+        name=body.restaurant_name.strip(),
+        status="pending",
+        country=body.country.upper(),
+        currency=body.currency.upper(),
+        timezone=body.timezone,
+    )
+    db.add(restaurant)
+    db.flush()
+
+    db.add(Branch(restaurant_id=restaurant.id, name="Main branch", is_default=True))
+    db.add(RestaurantMember(restaurant_id=restaurant.id, user_id=user.id, role="owner"))
+    db.add(AuditLog(actor_user_id=user.id, restaurant_id=restaurant.id, action="auth.register"))
+    db.commit()
+
+    token = new_session_token()
+    db.add(UserSession(
+        user_id=user.id,
+        token_hash=hash_token(token),
+        expires_at=datetime.now(timezone.utc) + timedelta(days=settings.session_days),
+        user_agent=(request.headers.get("user-agent") or "")[:300],
+        ip=request.client.host if request.client else "unknown",
+    ))
+    db.commit()
+
+    response.set_cookie(
+        settings.session_cookie_name, token,
+        max_age=settings.session_days * 86400, httponly=True, samesite="lax",
+        secure=settings.is_production, path="/",
+    )
+    return build_me(db, user)
 
 
 @router.post("/login", response_model=MeOut)

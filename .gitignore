@@ -30,6 +30,7 @@ Thumbs.db
 
 # Local data and logs
 uploads/
+storage/
 *.log
 *.db
 
