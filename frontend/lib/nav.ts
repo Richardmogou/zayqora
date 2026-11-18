@@ -1,14 +1,14 @@
-import { BarChart3, Bell, CalendarCheck, ChefHat, LayoutDashboard, Settings, ShoppingBag, UtensilsCrossed, Users, type LucideIcon } from "lucide-react";
+import { BarChart3, Bell, Boxes, CalendarCheck, ChefHat, LayoutDashboard, Settings, ShoppingBag, UtensilsCrossed, Users, type LucideIcon } from "lucide-react";
 
 export type NavItem = { href: string; key: string; icon: LucideIcon };
 
-// Menu du MVP. Les pages autres que le tableau de bord sont des écrans provisoires jusqu'à leur jour de livraison.
 export const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", key: "nav.dashboard", icon: LayoutDashboard },
   { href: "/menu", key: "nav.menu", icon: UtensilsCrossed },
   { href: "/orders", key: "nav.orders", icon: ShoppingBag },
   { href: "/kitchen", key: "nav.kitchen", icon: ChefHat },
   { href: "/reservations", key: "nav.reservations", icon: CalendarCheck },
+  { href: "/inventory", key: "nav.inventory", icon: Boxes },
   { href: "/notifications", key: "nav.notifications", icon: Bell },
   { href: "/customers", key: "nav.customers", icon: Users },
   { href: "/reports", key: "nav.reports", icon: BarChart3 },

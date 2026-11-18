@@ -20,6 +20,7 @@ export const config = {
     "/menu/:path*",
     "/kitchen/:path*",
     "/reservations/:path*",
+    "/inventory/:path*",
     "/notifications/:path*",
     "/customers/:path*",
     "/reports/:path*",
