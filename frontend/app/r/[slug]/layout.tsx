@@ -1,6 +1,26 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { serverFetch } from "@/lib/auth";
 import type { RestaurantInfo } from "@/lib/auth";
+
+export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
+  const restaurant = await serverFetch<RestaurantInfo>(`/public/restaurants/${params.slug}`);
+  if (!restaurant) {
+    return {
+      title: "Restaurant Not Found",
+      robots: { index: false, follow: false },
+    };
+  }
+  return {
+    title: `${restaurant.name} — Menu, Online Ordering & Reservations`,
+    description: `Browse the menu, place an online order or book a table at ${restaurant.name} on ZAYQORA.`,
+    openGraph: {
+      title: `${restaurant.name} | ZAYQORA`,
+      description: `Discover authentic dishes, online ordering and table reservations at ${restaurant.name}.`,
+      type: "website",
+    },
+  };
+}
 
 const NAV = [
   { label: "Home",         href: "" },
