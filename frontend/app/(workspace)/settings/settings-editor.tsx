@@ -17,6 +17,35 @@ export interface TeamMember {
   full_name: string;
 }
 
+export interface BranchItem {
+  id: string;
+  name: string;
+  address: string | null;
+  timezone: string | null;
+  is_default: boolean;
+}
+
+export interface CouponItem {
+  id: string;
+  code: string;
+  discount_type: string;
+  discount_value: number;
+  min_order_minor: number;
+  max_uses: number | null;
+  used_count: number;
+  is_active: boolean;
+}
+
+export interface ReviewItem {
+  id: string;
+  customer_name: string;
+  rating: number;
+  comment: string | null;
+  status: string;
+  owner_response: string | null;
+  created_at: string;
+}
+
 const TIMEZONES = [
   "UTC",
   "Europe/Paris",
@@ -40,11 +69,17 @@ const COUNTRIES = [
 export function SettingsEditor({
   restaurant,
   members: initialMembers,
+  branches: initialBranches = [],
+  coupons: initialCoupons = [],
+  reviews: initialReviews = [],
   currentUserId,
   role,
 }: {
   restaurant: RestaurantInfo;
   members: TeamMember[];
+  branches?: BranchItem[];
+  coupons?: CouponItem[];
+  reviews?: ReviewItem[];
   currentUserId: string;
   role: string;
 }) {
@@ -55,10 +90,21 @@ export function SettingsEditor({
   const [timezone, setTimezone] = useState(restaurant.timezone);
   const [status, setStatus] = useState(restaurant.status);
   const [members, setMembers] = useState<TeamMember[]>(initialMembers);
+  const [branches, setBranches] = useState<BranchItem[]>(initialBranches);
+  const [coupons, setCoupons] = useState<CouponItem[]>(initialCoupons);
+  const [reviews, setReviews] = useState<ReviewItem[]>(initialReviews);
 
   const [inviteName, setInviteName] = useState("");
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState("manager");
+
+  const [branchName, setBranchName] = useState("");
+  const [branchAddress, setBranchAddress] = useState("");
+
+  const [couponCode, setCouponCode] = useState("");
+  const [couponType, setCouponType] = useState<"percentage" | "fixed" | "free_delivery">("percentage");
+  const [couponValue, setCouponValue] = useState("15");
+  const [couponMinOrder, setCouponMinOrder] = useState("20");
 
   const [saving, setSaving] = useState(false);
   const [inviting, setInviting] = useState(false);
@@ -161,6 +207,84 @@ export function SettingsEditor({
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not remove staff member.");
+    }
+  }
+
+  async function handleCreateBranch(e: FormEvent) {
+    e.preventDefault();
+    if (!canEditRestaurant || !branchName.trim()) return;
+    setError(null);
+    setNotice(null);
+    try {
+      const created = await api<BranchItem>("/branches", {
+        method: "POST",
+        headers: { "X-Restaurant-Id": restaurant.id },
+        body: JSON.stringify({
+          name: branchName.trim(),
+          address: branchAddress.trim() || null,
+          is_default: false,
+        }),
+      });
+      setBranches((prev) => [...prev, created]);
+      setBranchName("");
+      setBranchAddress("");
+      setNotice(`Branch "${created.name}" created.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not create branch.");
+    }
+  }
+
+  async function handleCreateCoupon(e: FormEvent) {
+    e.preventDefault();
+    if (!canEditRestaurant || !couponCode.trim()) return;
+    setError(null);
+    setNotice(null);
+    try {
+      const rawVal = Number.parseFloat(couponValue) || 0;
+      const discountValue = couponType === "fixed" ? Math.round(rawVal * 100) : Math.round(rawVal);
+      const minOrderMinor = Math.round((Number.parseFloat(couponMinOrder) || 0) * 100);
+      const created = await api<CouponItem>("/coupons", {
+        method: "POST",
+        headers: { "X-Restaurant-Id": restaurant.id },
+        body: JSON.stringify({
+          code: couponCode.trim().toUpperCase(),
+          discount_type: couponType,
+          discount_value: discountValue,
+          min_order_minor: minOrderMinor,
+        }),
+      });
+      setCoupons((prev) => [created, ...prev]);
+      setCouponCode("");
+      setNotice(`Promo code "${created.code}" created.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not create coupon.");
+    }
+  }
+
+  async function handleDeleteCoupon(couponId: string) {
+    if (!canEditRestaurant) return;
+    try {
+      await api(`/coupons/${couponId}`, {
+        method: "DELETE",
+        headers: { "X-Restaurant-Id": restaurant.id },
+      });
+      setCoupons((prev) => prev.filter((c) => c.id !== couponId));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not delete coupon.");
+    }
+  }
+
+  async function handleModerateReview(reviewId: string, nextStatus: "approved" | "rejected") {
+    if (!canEditRestaurant) return;
+    try {
+      const updated = await api<ReviewItem>(`/reviews/${reviewId}`, {
+        method: "PATCH",
+        headers: { "X-Restaurant-Id": restaurant.id },
+        body: JSON.stringify({ status: nextStatus }),
+      });
+      setReviews((prev) => prev.map((r) => (r.id === reviewId ? updated : r)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not moderate review.");
     }
   }
 
@@ -393,6 +517,161 @@ export function SettingsEditor({
           </div>
         </div>
       </Card>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card title="Branches & locations">
+          <div className="space-y-4">
+            {canEditRestaurant && (
+              <form onSubmit={handleCreateBranch} className="grid gap-2.5 sm:grid-cols-3">
+                <input
+                  type="text"
+                  required
+                  placeholder="Branch name"
+                  value={branchName}
+                  onChange={(e) => setBranchName(e.target.value)}
+                  className={inputClass}
+                />
+                <input
+                  type="text"
+                  placeholder="Address"
+                  value={branchAddress}
+                  onChange={(e) => setBranchAddress(e.target.value)}
+                  className={inputClass}
+                />
+                <button
+                  type="submit"
+                  className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl bg-primary px-4 text-xs font-semibold text-primary-foreground"
+                >
+                  <Plus className="h-3.5 w-3.5" /> Add branch
+                </button>
+              </form>
+            )}
+            <div className="divide-y divide-border text-sm">
+              {branches.map((b) => (
+                <div key={b.id} className="flex items-center justify-between py-2.5">
+                  <div>
+                    <p className="font-semibold">{b.name}</p>
+                    {b.address && <p className="text-xs text-muted-foreground">{b.address}</p>}
+                  </div>
+                  <Badge tone={b.is_default ? "success" : "neutral"}>
+                    {b.is_default ? "Main branch" : "Secondary"}
+                  </Badge>
+                </div>
+              ))}
+            </div>
+          </div>
+        </Card>
+
+        <Card title="Promo codes & coupons">
+          <div className="space-y-4">
+            {canEditRestaurant && (
+              <form onSubmit={handleCreateCoupon} className="grid gap-2.5 sm:grid-cols-4">
+                <input
+                  type="text"
+                  required
+                  placeholder="CODE (e.g. WELCOME15)"
+                  value={couponCode}
+                  onChange={(e) => setCouponCode(e.target.value)}
+                  className={inputClass}
+                />
+                <select
+                  value={couponType}
+                  onChange={(e) => setCouponType(e.target.value as "percentage" | "fixed" | "free_delivery")}
+                  className={inputClass}
+                >
+                  <option value="percentage">% Discount</option>
+                  <option value="fixed">Fixed amount</option>
+                  <option value="free_delivery">Free delivery</option>
+                </select>
+                <input
+                  type="number"
+                  min="0"
+                  placeholder="Value"
+                  value={couponValue}
+                  onChange={(e) => setCouponValue(e.target.value)}
+                  className={inputClass}
+                />
+                <button
+                  type="submit"
+                  className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl bg-primary px-4 text-xs font-semibold text-primary-foreground"
+                >
+                  <Plus className="h-3.5 w-3.5" /> Create
+                </button>
+              </form>
+            )}
+            <div className="divide-y divide-border text-xs">
+              {coupons.length === 0 && <p className="py-4 text-muted-foreground">No active promo codes.</p>}
+              {coupons.map((c) => (
+                <div key={c.id} className="flex items-center justify-between py-2.5">
+                  <div>
+                    <span className="font-mono font-bold text-primary">{c.code}</span>
+                    <span className="ml-2 text-muted-foreground">
+                      {c.discount_type === "percentage"
+                        ? `${c.discount_value}% off`
+                        : c.discount_type === "free_delivery"
+                        ? "Free delivery"
+                        : `${(c.discount_value / 100).toFixed(2)} off`}{" "}
+                      · {c.used_count} used
+                    </span>
+                  </div>
+                  {canEditRestaurant && (
+                    <button
+                      type="button"
+                      onClick={() => void handleDeleteCoupon(c.id)}
+                      className="text-danger hover:underline"
+                    >
+                      Delete
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      {reviews.length > 0 && (
+        <Card title="Customer reviews moderation">
+          <div className="divide-y divide-border text-sm">
+            {reviews.map((rev) => (
+              <div key={rev.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold">{rev.customer_name}</span>
+                    <span className="text-xs font-bold text-amber-500">{"★".repeat(rev.rating)}</span>
+                    <Badge tone={rev.status === "approved" ? "success" : rev.status === "rejected" ? "danger" : "warning"}>
+                      {rev.status}
+                    </Badge>
+                  </div>
+                  {rev.comment && <p className="mt-1 text-xs text-muted-foreground">{rev.comment}</p>}
+                </div>
+                {canEditRestaurant && (
+                  <div className="flex items-center gap-2 text-xs">
+                    {rev.status !== "approved" && (
+                      <button
+                        type="button"
+                        onClick={() => void handleModerateReview(rev.id, "approved")}
+                        className="rounded-lg bg-success/15 px-2.5 py-1 font-semibold text-success"
+                      >
+                        Approve
+                      </button>
+                    )}
+                    {rev.status !== "rejected" && (
+                      <button
+                        type="button"
+                        onClick={() => void handleModerateReview(rev.id, "rejected")}
+                        className="rounded-lg bg-danger/15 px-2.5 py-1 font-semibold text-danger"
+                      >
+                        Reject
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
     </div>
   );
 }
