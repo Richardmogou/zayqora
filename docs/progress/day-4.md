@@ -1,64 +1,71 @@
-# Day 4 — Cart, Checkout & Orders
+# Day 4 — Cart, Checkout, Idempotent Order Processing & Order Lifecycle
 
-**Date**: 2025-05-01
-**Author**: Nchifor Richard
+Customers can customize dishes, review and adjust their persisted shopping cart (`/r/{slug}/cart`), select a fulfilment mode (`delivery`, `pickup`, `dine-in`), and submit orders (`/r/{slug}/checkout`) protected by restaurant-scoped idempotency keys. The backend revalidates every item and modifier against the database, snapshots purchased names, modifiers and unit prices in minor units, notifies restaurant staff, and exposes live customer order confirmation and tracking pages alongside the workspace order management console (`/orders` and `/orders/{id}`).
 
-## Acceptance criteria
+## Acceptance criteria covered
 
-| # | Criterion | Status |
-|---|-----------|--------|
-| 1 | `Order` + `OrderLine` models with UUID PKs, minor-unit amounts, status enum | ✅ |
-| 2 | Alembic migrations `0003_day4_orders`, `0004_day4b_orders_hardening`, and `0005_day4_order_integrity` — order tables, payment status, and restaurant-scoped idempotency | ✅ |
-| 3 | `POST /public/orders?slug=` — creates order from storefront, delivery fee €4 flat | ✅ |
-| 4 | `GET /public/orders/{id}?slug=` — storefront can fetch its own order (confirmation/tracking) | ✅ |
-| 5 | `GET /orders` — workspace list, filterable by status & service_mode, tenant-scoped | ✅ |
-| 6 | `GET /orders/{id}` — workspace detail with lines | ✅ |
-| 7 | `PATCH /orders/{id}/status` — owner/manager/cashier only, validates status enum | ✅ |
-| 8 | Cross-tenant isolation: orders from other restaurants return 404 | ✅ |
-| 9 | Role guards: waiter cannot update status, kitchen can view | ✅ |
-| 10 | Modifier snapshot stored as JSONB on order_lines | ✅ |
-| 11 | Zustand cart store (`lib/cart-store.ts`) — persisted to localStorage, scoped per slug | ✅ |
-| 12 | `DishCustomizer` writes to cart store on "Add to cart" | ✅ |
-| 13 | Cart page (`/r/[slug]/cart`) reads from store — qty controls, remove, delivery mode | ✅ |
-| 14 | Checkout page (`/r/[slug]/checkout`) reads store, calls `POST /public/orders`, clears cart on success | ✅ |
-| 15 | Order confirmation (`/r/[slug]/order-confirmation/[id]`) — Server Component, real API data, progress stepper | ✅ |
-| 16 | Order tracking (`/r/[slug]/order-tracking/[id]`) — Server Component, real status, animated progress bar | ✅ |
-| 17 | Workspace orders list (`/orders`) — Server Component, real API data, replaces hardcoded demo | ✅ |
-| 18 | Workspace order detail (`/orders/[id]`) — Server Component, real data + `OrderStatusActions` client component | ✅ |
-| 19 | 26 day-4 backend tests pass (`python -m pytest tests/test_orders.py -q`); full suite not rerun | ✅ |
+| Criterion | Status |
+|---|---|
+| Alembic migrations `0003_day4_orders`, `0004_day4b_orders_hardening` and `0005_day4_order_integrity` create `orders` and `order_lines` with minor-unit totals, payment state and `(restaurant_id, idempotency_key)` uniqueness | ✅ |
+| `POST /api/v1/public/orders?slug=` revalidates item publication/availability, enforces required and single-select modifier rules, and computes authoritative server-side totals | ✅ |
+| Historical orders snapshot item names, unit prices (`discounted_price_minor` when active) and selected modifiers (`JSONB`) so later menu edits never alter past orders | ✅ |
+| Duplicate checkout retries with the same `idempotency_key` (including concurrent race conditions caught via `IntegrityError`) return the existing order without double-creation | ✅ |
+| `GET /api/v1/public/orders/{id}?slug=` powers customer confirmation and live status tracking without exposing internal staff notes | ✅ |
+| `GET /api/v1/orders`, `GET /api/v1/orders/{id}` and `PATCH /api/v1/orders/{id}/status` enforce role permissions and state-machine transitions (`received` → `confirmed` → `in_preparation` → `ready` → `served` / `cancelled`) | ✅ |
+| Zustand cart store (`lib/cart-store.ts`) persists per restaurant slug in `localStorage` and clears automatically after order placement | ✅ |
+| Automated test suite covers 26 server-side pricing, modifier validation, idempotency, role-guard and cross-tenant order scenarios | ✅ |
 
-## Architecture decisions
+---
 
-- **`POST /public/orders`** is unauthenticated — any visitor can place an order. The restaurant is resolved from the `slug` query param, validated as active.
-- **`GET /public/orders/{id}`** is also unauthenticated — the order ID (UUID) acts as a bearer token for the confirmation/tracking pages. No PII is exposed beyond what the customer submitted.
-- **Delivery fee** is a flat €4.00 (400 minor units) computed server-side. The client cannot override it.
-- **Payment is not processed yet.** Card and PayPal are stored as the customer's requested method; `payment_status` remains `pending` until a provider integration is selected and implemented.
-- **Idempotency keys are scoped to a restaurant** and protected by a database uniqueness constraint.
-- **Cart store** uses Zustand `persist` middleware with `localStorage`. Switching restaurant slug clears the cart automatically.
-- **Workspace orders** are Server Components — no client-side fetch, no loading states, instant render on navigation.
-- **`OrderStatusActions`** is a Client Component extracted from the detail page to keep the page itself a Server Component while enabling optimistic status updates via `router.refresh()`.
+## Persisted customer cart (`/r/[slug]/cart`)
 
-## Files created / modified
+At `http://localhost:3000/r/demo-bistro/cart`, customers inspect their selected dishes, chosen variants/modifiers, and line subtotals stored in the slug-scoped Zustand cart (`lib/cart-store.ts`). Customers can increment, decrement or remove lines, enter a promo code, and switch between `Pickup` and `Delivery` (which previews the flat `€4.00` delivery fee before checkout).
 
-### Backend
-- `app/models/orders.py` — `Order`, `OrderLine` models
-- `app/models/__init__.py` — exports Order, OrderLine
-- `migrations/versions/0003_day4_orders.py` — Alembic migration
-- `migrations/versions/0004_day4b_orders_hardening.py` — idempotency and payment-status columns
-- `migrations/versions/0005_day4_order_integrity.py` — restaurant-scoped idempotency constraint
-- `app/schemas/orders.py` — `OrderIn`, `OrderLineIn`, `OrderOut`, `OrderListOut`, `OrderStatusIn`
-- `app/api/v1/orders.py` — workspace router + `public_router`
-- `app/api/v1/router.py` — registers both routers
-- `tests/test_orders.py` — 16 tests
+![Public restaurant cart page](../screenshots/day-4/storefront-cart.png)
 
-### Frontend
-- `lib/cart-store.ts` — Zustand cart store with persistence
-- `app/r/[slug]/menu/[item]/dish-customizer.tsx` — writes to cart store
-- `app/r/[slug]/menu/[item]/page.tsx` — passes `slug` to DishCustomizer
-- `app/r/[slug]/cart/page.tsx` — reads from cart store
-- `app/r/[slug]/checkout/page.tsx` — calls API, clears cart
-- `app/r/[slug]/order-confirmation/[id]/page.tsx` — Server Component
-- `app/r/[slug]/order-tracking/[id]/page.tsx` — Server Component
-- `app/(workspace)/orders/page.tsx` — Server Component, real API
-- `app/(workspace)/orders/[id]/page.tsx` — Server Component, real API
-- `app/(workspace)/orders/[id]/order-status-actions.tsx` — Client Component
+---
+
+## Customer checkout with idempotency protection (`/r/[slug]/checkout`)
+
+Proceeding to `http://localhost:3000/r/demo-bistro/checkout` generates a stable `crypto.randomUUID()` idempotency key for the checkout session. Customers enter their contact details, choose `Delivery`, `Takeaway (Pickup)` or `Dine-in`, provide a delivery address when required, select a requested payment method (`card`, `paypal`, `cash`), and submit `POST /api/v1/public/orders?slug=demo-bistro`. The backend recomputes every line price from the database, persists the `Order` and `OrderLine` snapshots in a single transaction, dispatches an `order.created` staff notification, and redirects the customer to the confirmation screen.
+
+![Public checkout page](../screenshots/day-4/storefront-checkout.png)
+
+---
+
+## Order confirmation and live customer tracking (`/r/[slug]/order-confirmation/[id]` & `/r/[slug]/order-tracking/[id]`)
+
+Immediately after checkout, `http://localhost:3000/r/demo-bistro/order-confirmation/{order_id}` displays the order reference (`#D55F45B3`), progress stepper (`Order received` → `Confirmed` → `In preparation` → `Ready` → `Served`), purchased item breakdown, and customer/service summary.
+
+![Public order confirmation page](../screenshots/day-4/order-confirmation.png)
+
+Clicking `Track my order` opens `http://localhost:3000/r/demo-bistro/order-tracking/{order_id}`, which renders a visual milestone bar and live status badge reflecting updates made by restaurant or kitchen staff.
+
+![Public live order tracking page](../screenshots/day-4/order-tracking.png)
+
+---
+
+## Workspace order management (`/orders` & `/orders/[id]`)
+
+In the restaurant console, `http://localhost:3000/orders` lists tenant orders in reverse chronological order with instant search (by order reference or customer name) and filters by status (`received`, `confirmed`, `in_preparation`, `ready`, `served`, `cancelled`), service mode (`dine-in`, `pickup`, `delivery`), and payment method (`card`, `paypal`, `cash`).
+
+![Workspace orders list with filters](../screenshots/day-4/workspace-orders.png)
+
+Opening an order (`http://localhost:3000/orders/{order_id}`) shows the full line-item and modifier snapshot, customer contact details, amount breakdown (`Subtotal`, `Delivery fee`, `Total`), and role-aware transition controls (`OrderStatusActions`). Every status change writes to `audit_logs` and triggers a deduplicated staff notification.
+
+![Workspace order detail and status transition actions](../screenshots/day-4/workspace-order-detail.png)
+
+---
+
+## Automated tests
+
+Running `pytest tests/test_orders.py -v` in `backend/` executes **26 automated tests** verifying server-side subtotal and delivery-fee calculation, modifier group rules (required groups, single-select enforcement, duplicate modifier rejection, cross-item modifier rejection), idempotency key deduplication per tenant, valid and invalid status transitions (`409` on illegal transitions), role guards (`kitchen` restricted to `in_preparation` and `ready`; `waiter` blocked from status changes with `403`), and cross-tenant `404` masking.
+
+![Day 4 pytest execution output](../screenshots/day-4/pytest-day4.png)
+
+---
+
+## Known limitations
+
+- Online card/PayPal payment capture requires a merchant provider adapter and webhook credentials; orders currently record the customer's selected `payment_method` with `payment_status="pending"`.
+- Delivery fee is a server-enforced flat `400` minor units (`€4.00`); zone-based delivery pricing is scheduled for a later phase.
