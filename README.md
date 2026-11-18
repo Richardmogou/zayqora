@@ -51,3 +51,4 @@ pytest -v
 | [Day 3](docs/progress/day-3.md) | Public website & menu: branded storefront, menu CRUD, validated dish image upload, modifiers & dietary tags |
 | [Day 4](docs/progress/day-4.md) | Cart, checkout & orders: persisted cart store, server-side pricing, idempotent order creation & order lifecycle |
 | [Day 5](docs/progress/day-5.md) | Reservations & operations: timezone-aware booking availability, capacity locks, KDS board & staff notifications |
+| [Day 6](docs/progress/day-6.md) | Admin & platform controls: live dashboard KPIs, sales reports & CSV export, customer CRM & VIRELEO super admin |
