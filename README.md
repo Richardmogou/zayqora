@@ -1,6 +1,6 @@
 # ZAYQORA — The Complete Digital Restaurant Platform
 
-**Author**: Nchifor Richard  
+**Author**: Nchifor Richard
 **Company / Product Blueprint**: VIRELEO
 
 Multi-tenant restaurant website, online ordering, table reservations, kitchen operations (KDS) and SaaS management platform.
@@ -44,6 +44,6 @@ pytest -v
 
 ## Daily progress
 
-| Day | Focus |
-|---|---|
+| Day                            | Focus                                                                                                               |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------- |
 | [Day 1](docs/progress/day-1.md) | Foundation & design: repository, database schema baseline, auth skeleton, multi-tenant isolation & UI design system |
