@@ -15,12 +15,28 @@ services:
 
   backend:
     build: ./backend
+    restart: unless-stopped
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-zayqora}:${POSTGRES_PASSWORD:-zayqora_dev}@db:5432/${POSTGRES_DB:-zayqora}
       CORS_ORIGINS: http://localhost:3000
     ports: ["8000:8000"]
     depends_on:
       db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health')\""]
+      interval: 10s
+      retries: 5
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    environment:
+      API_ORIGIN: http://backend:8000
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    ports: ["3000:3000"]
+    depends_on:
+      backend:
         condition: service_healthy
 
 volumes:
