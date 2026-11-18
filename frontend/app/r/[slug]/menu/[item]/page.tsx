@@ -39,24 +39,24 @@ export default async function DishDetailPage({ params }: { params: { slug: strin
     : [];
 
   return (
-    <div className="px-8 py-6">
+    <div className="px-4 py-5 sm:px-6 lg:px-8 lg:py-6">
       <div className="mb-4 flex flex-wrap items-start justify-between gap-4">
         <Link href={`${base}/menu`} className="inline-flex items-center gap-2 rounded-xl bg-white/80 px-3.5 py-2 text-xs font-semibold text-[#0B2A22] hover:bg-white">
           ← Back to menu
         </Link>
       </div>
 
-      <div className="grid gap-8 lg:grid-cols-12">
+      <div className="grid gap-6 lg:grid-cols-12 lg:gap-8">
         <div className="lg:col-span-6">
           <div className="overflow-hidden rounded-3xl border border-border bg-[#E5F1EB] shadow-sm">
             {dish.image_url ? (
-              <img src={dish.image_url} alt={dish.name} className="h-[360px] w-full object-cover" />
+              <img src={dish.image_url} alt={dish.name} className="h-64 w-full object-cover sm:h-[360px]" />
             ) : (
-              <div className="h-[360px] w-full" />
+              <div className="h-64 w-full sm:h-[360px]" />
             )}
           </div>
-          <div className="mt-5 flex items-baseline justify-between">
-            <h1 className="text-3xl font-bold text-[#0B2A22]">{dish.name}</h1>
+          <div className="mt-5 flex flex-wrap items-baseline justify-between gap-2">
+            <h1 className="text-2xl font-bold text-[#0B2A22] sm:text-3xl">{dish.name}</h1>
             {dish.discounted_price_minor != null ? (
               <div className="flex items-baseline gap-2">
                 <span className="text-3xl font-extrabold text-[#1D6846]">{sym}{(dish.discounted_price_minor / 100).toFixed(2)}</span>

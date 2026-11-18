@@ -24,6 +24,16 @@ class ReservationIn(BaseModel):
     notes: str | None = None
 
 
+class ReservationUpdateIn(BaseModel):
+    customer_name: str | None = Field(default=None, min_length=1, max_length=200)
+    customer_phone: str | None = Field(default=None, max_length=30)
+    customer_email: str | None = Field(default=None, max_length=320)
+    guests: int | None = Field(default=None, ge=1, le=100)
+    table_label: str | None = Field(default=None, max_length=50)
+    reserved_at: datetime | None = None
+    notes: str | None = None
+
+
 class PublicReservationIn(ReservationIn):
     idempotency_key: str | None = Field(default=None, max_length=64)
     customer_email: EmailStr | None = None

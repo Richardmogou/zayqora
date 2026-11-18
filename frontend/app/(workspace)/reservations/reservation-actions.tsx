@@ -10,13 +10,25 @@ const NEXT: Record<string, { status: string; label: string }[]> = {
   seated: [{ status: "completed", label: "Complete" }, { status: "cancelled", label: "Cancel" }],
 };
 
-export function ReservationActions({ reservationId, restaurantId, status }: {
-  reservationId: string; restaurantId: string; status: string;
+export function ReservationActions({
+  reservationId,
+  restaurantId,
+  status,
+  role = "owner",
+  onUpdated,
+}: {
+  reservationId: string;
+  restaurantId: string;
+  status: string;
+  role?: string;
+  onUpdated?: () => void;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const actions = NEXT[status] ?? [];
+  const actions = (NEXT[status] ?? []).filter(
+    (action) => role !== "waiter" || ["seated", "completed"].includes(action.status)
+  );
   if (!actions.length) return <span className="text-xs text-muted-foreground">—</span>;
 
   async function update(next: string) {
@@ -25,6 +37,7 @@ export function ReservationActions({ reservationId, restaurantId, status }: {
       await api(`/reservations/${reservationId}/status`, {
         method: "PATCH", headers: { "X-Restaurant-Id": restaurantId }, body: JSON.stringify({ status: next }),
       });
+      if (onUpdated) onUpdated();
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not update reservation.");

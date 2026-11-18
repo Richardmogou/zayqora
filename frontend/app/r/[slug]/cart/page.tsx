@@ -27,15 +27,15 @@ export default function CartPage({ params }: { params: { slug: string } }) {
 
   return (
     <div className="space-y-6 pb-10">
-      <section className="relative overflow-hidden border-b border-border/60 bg-[#F6F4EF] px-8 py-7">
-        <img src="/images/p12-header-fade.png" alt="" aria-hidden className="pointer-events-none absolute inset-y-0 right-0 h-full w-[65%] object-cover object-left" />
+      <section className="relative overflow-hidden border-b border-border/60 bg-[#F6F4EF] px-4 py-6 sm:px-6 lg:px-8 lg:py-7">
+        <img src="/images/p12-header-fade.png" alt="" aria-hidden className="pointer-events-none absolute inset-y-0 right-0 h-full w-[65%] object-cover object-left opacity-40 lg:opacity-100" />
         <div className="relative z-10">
-          <h1 className="text-5xl font-bold text-[#0B2A22]">Your cart</h1>
-          <p className="mt-2 text-lg font-medium text-[#0B2A22]/90">Exceptional dishes, soon at your table</p>
+          <h1 className="text-3xl font-bold text-[#0B2A22] sm:text-4xl lg:text-5xl">Your cart</h1>
+          <p className="mt-2 text-sm font-medium text-[#0B2A22]/90 sm:text-lg">Exceptional dishes, soon at your table</p>
         </div>
       </section>
 
-      <div className="grid gap-6 px-8 lg:grid-cols-12">
+      <div className="grid gap-6 px-4 sm:px-6 lg:grid-cols-12 lg:px-8">
         <div className="space-y-4 lg:col-span-7">
           <div className="rounded-2xl border border-border bg-white p-6">
             <h2 className="text-lg font-bold text-[#0B2A22]">Selected items ({lines.length})</h2>

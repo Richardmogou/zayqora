@@ -15,14 +15,14 @@ export default async function StorefrontMenuPage({ params }: { params: { slug: s
 
   return (
     <div className="space-y-6 pb-10">
-      <section className="relative overflow-hidden border-b border-border/60 bg-[#F6F4EF] px-8 py-8">
-        <img src="/images/p12-header-fade.png" alt="" aria-hidden className="pointer-events-none absolute inset-y-0 right-0 h-full w-[65%] object-cover object-left" />
-        <div className="relative z-10 flex flex-wrap items-center justify-between gap-6">
+      <section className="relative overflow-hidden border-b border-border/60 bg-[#F6F4EF] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+        <img src="/images/p12-header-fade.png" alt="" aria-hidden className="pointer-events-none absolute inset-y-0 right-0 h-full w-[65%] object-cover object-left opacity-40 lg:opacity-100" />
+        <div className="relative z-10 flex flex-wrap items-center justify-between gap-4 sm:gap-6">
           <div>
-            <h1 className="text-5xl font-bold text-[#0B2A22]">Our menu</h1>
-            <p className="mt-2 text-lg font-medium text-[#0B2A22]/90">Authentic flavors for every palate</p>
+            <h1 className="text-3xl font-bold text-[#0B2A22] sm:text-4xl lg:text-5xl">Our menu</h1>
+            <p className="mt-1.5 text-sm font-medium text-[#0B2A22]/90 sm:text-lg">Authentic flavors for every palate</p>
           </div>
-          <div className="border-l-2 border-[#C4933F]/50 pl-6">
+          <div className="hidden border-l-2 border-[#C4933F]/50 pl-6 sm:block">
             <p className="text-xl font-bold leading-snug text-[#0B2A22]">
               More than
               <br />

@@ -402,15 +402,15 @@ export default function MenuPage() {
       <Card className="p-6">
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-lg font-bold">Menu items</h2>
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="relative">
+          <div className="flex w-full flex-wrap items-center gap-3 sm:w-auto">
+            <div className="relative flex-1 sm:flex-initial">
               <Search className="absolute left-3.5 top-3 h-4 w-4 text-muted-foreground" />
               <input
                 type="text"
                 placeholder="Search an item..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="h-10 w-56 rounded-xl border border-border bg-card pl-10 pr-3 text-sm focus:border-primary focus:outline-none"
+                className="h-10 w-full rounded-xl border border-border bg-card pl-10 pr-3 text-sm focus:border-primary focus:outline-none sm:w-56"
               />
             </div>
             <select value={selectedCategory} onChange={(e) => setSelectedCategory(e.target.value)} className={selectClass}>

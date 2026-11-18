@@ -56,14 +56,14 @@ export function OrdersTable({ orders, sym }: { orders: OrderListItem[]; sym: str
   return (
     <Card className="overflow-hidden p-0">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border p-4">
-        <div className="relative">
+        <div className="relative w-full sm:w-auto">
           <Search className="absolute left-3.5 top-3 h-4 w-4 text-muted-foreground" />
           <input
             type="text"
             placeholder="Search order # or customer..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="h-10 w-64 rounded-xl border border-border bg-card pl-10 pr-3 text-sm focus:border-primary focus:outline-none"
+            className="h-10 w-full rounded-xl border border-border bg-card pl-10 pr-3 text-sm focus:border-primary focus:outline-none sm:w-64"
           />
         </div>
         <div className="flex flex-wrap items-center gap-3">
