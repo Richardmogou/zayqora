@@ -77,7 +77,7 @@ export function MenuBrowser({
     .filter((cat) => cat.items.length > 0);
 
   return (
-    <div className="space-y-8 px-8">
+    <div className="space-y-8 px-4 sm:px-6 lg:px-8">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex flex-wrap gap-2">
           <button
@@ -107,15 +107,15 @@ export function MenuBrowser({
           ))}
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="relative">
+        <div className="flex w-full flex-wrap items-center gap-3 sm:w-auto">
+          <div className="relative flex-1 sm:flex-initial">
             <Search className="absolute left-3.5 top-3 h-4 w-4 text-slate-400" />
             <input
               type="text"
               placeholder="Search dishes or dietary tags..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="h-10 w-64 rounded-xl border border-border bg-white pl-10 pr-3.5 text-xs text-[#0B2A22] focus:outline-none"
+              className="h-10 w-full rounded-xl border border-border bg-white pl-10 pr-3.5 text-xs text-[#0B2A22] focus:outline-none sm:w-64"
             />
           </div>
           <select
@@ -136,8 +136,8 @@ export function MenuBrowser({
 
       {visibleCategories.map((cat) => (
         <div key={cat.id}>
-          <h2 className="mb-4 text-2xl font-bold text-[#0B2A22]">{cat.name}</h2>
-          <div className="grid gap-6 md:grid-cols-3">
+          <h2 className="mb-4 text-xl font-bold text-[#0B2A22] sm:text-2xl">{cat.name}</h2>
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {cat.items.map((dish) => {
               const tags = dish.dietary_tags
                 ? dish.dietary_tags.split(",").map((t) => t.trim()).filter(Boolean)

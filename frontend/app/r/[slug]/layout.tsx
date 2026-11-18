@@ -20,51 +20,71 @@ export default async function StorefrontLayout({
   const restaurant = await serverFetch<RestaurantInfo>(`/public/restaurants/${params.slug}`);
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-[#F6F4EF] text-[#0B2A22]">
-        <div className="flex min-h-0 flex-1 overflow-hidden">
-          <aside className="relative flex h-full w-60 shrink-0 flex-col justify-between overflow-hidden bg-[#0B2A22] px-5 py-6 text-white">
-            <div className="relative z-10">
-              <div className="flex justify-center pb-7">
-                <Link href={base} className="flex flex-col items-center">
-                  <img src="/images/logo-emblem.png" alt="" className="h-10 w-10 object-contain" />
-                  <span className="mt-1.5 font-serif text-2xl tracking-[0.08em] text-[#C4933F]">
-                    {restaurant?.name ?? "ZAYQORA"}
-                  </span>
-                  <span className="mt-0.5 text-[9px] font-medium uppercase tracking-[0.28em] text-[#C4933F]/80">RESTAURANT</span>
+    <div className="flex min-h-screen flex-col bg-[#F6F4EF] text-[#0B2A22] lg:h-screen lg:overflow-hidden">
+      <header className="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-[#0B2A22] px-4 py-3 text-white lg:hidden">
+        <Link href={base} className="flex items-center gap-2.5">
+          <img src="/images/logo-emblem.png" alt="" className="h-8 w-8 object-contain" />
+          <span className="font-serif text-lg tracking-[0.08em] text-[#C4933F]">
+            {restaurant?.name ?? "ZAYQORA"}
+          </span>
+        </Link>
+        <nav className="flex flex-wrap items-center gap-1.5">
+          {NAV.map((item) => (
+            <Link
+              key={item.label}
+              href={`${base}${item.href}`}
+              className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-white/90 transition hover:bg-white/10 hover:text-white"
+            >
+              {item.label}
+            </Link>
+          ))}
+        </nav>
+      </header>
+
+      <div className="flex min-h-0 flex-1 lg:overflow-hidden">
+        <aside className="relative hidden h-full w-60 shrink-0 flex-col justify-between overflow-hidden bg-[#0B2A22] px-5 py-6 text-white lg:flex">
+          <div className="relative z-10">
+            <div className="flex justify-center pb-7">
+              <Link href={base} className="flex flex-col items-center">
+                <img src="/images/logo-emblem.png" alt="" className="h-10 w-10 object-contain" />
+                <span className="mt-1.5 font-serif text-2xl tracking-[0.08em] text-[#C4933F]">
+                  {restaurant?.name ?? "ZAYQORA"}
+                </span>
+                <span className="mt-0.5 text-[9px] font-medium uppercase tracking-[0.28em] text-[#C4933F]/80">RESTAURANT</span>
+              </Link>
+            </div>
+            <nav className="space-y-1.5">
+              {NAV.map((item) => (
+                <Link
+                  key={item.label}
+                  href={`${base}${item.href}`}
+                  className="block rounded-xl px-4 py-2.5 text-sm font-medium text-white/90 transition hover:bg-white/5 hover:text-white"
+                >
+                  {item.label}
                 </Link>
-              </div>
-              <nav className="space-y-1.5">
-                {NAV.map((item) => (
-                  <Link
-                    key={item.label}
-                    href={`${base}${item.href}`}
-                    className="block rounded-xl px-4 py-2.5 text-sm font-medium text-white/90 transition hover:bg-white/5 hover:text-white"
-                  >
-                    {item.label}
-                  </Link>
-                ))}
-              </nav>
-            </div>
-
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-0 px-2 opacity-30">
-              <img src="/images/sidebar-arch.png" alt="" className="w-full object-contain" />
-            </div>
-          </aside>
-
-          <main className="min-w-0 flex-1 overflow-y-auto">{children}</main>
-        </div>
-
-        <footer id="contact" className="shrink-0 border-t border-white/10 bg-[#071E17] px-8 py-3.5 text-white">
-          <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4">
-            <span className="font-serif text-xl tracking-[0.14em] text-[#C4933F]">
-              {restaurant?.name ?? "ZAYQORA"}
-            </span>
-            <div className="flex items-center gap-8 text-xs font-medium text-white/80">
-              <Link href={`${base}#contact`} className="hover:text-[#C4933F]">Contact</Link>
-              <Link href={`${base}/menu`} className="hover:text-[#C4933F]">Menu</Link>
-            </div>
+              ))}
+            </nav>
           </div>
-        </footer>
+
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-0 px-2 opacity-30">
+            <img src="/images/sidebar-arch.png" alt="" className="w-full object-contain" />
+          </div>
+        </aside>
+
+        <main className="min-w-0 flex-1 lg:overflow-y-auto">{children}</main>
       </div>
+
+      <footer id="contact" className="shrink-0 border-t border-white/10 bg-[#071E17] px-4 py-3.5 text-white sm:px-8">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4">
+          <span className="font-serif text-lg tracking-[0.14em] text-[#C4933F] sm:text-xl">
+            {restaurant?.name ?? "ZAYQORA"}
+          </span>
+          <div className="flex items-center gap-6 text-xs font-medium text-white/80 sm:gap-8">
+            <Link href={`${base}#contact`} className="hover:text-[#C4933F]">Contact</Link>
+            <Link href={`${base}/menu`} className="hover:text-[#C4933F]">Menu</Link>
+          </div>
+        </div>
+      </footer>
+    </div>
   );
 }

@@ -52,15 +52,15 @@ export default async function StorefrontHomePage({ params }: { params: { slug: s
     .slice(0, 3);
 
   return (
-    <div className="flex h-full flex-col justify-between pb-4">
-      <section className="relative flex min-h-[300px] flex-1 items-center overflow-hidden bg-[#F6F4EF]">
-        <div className="pointer-events-none absolute inset-y-0 right-0 w-full lg:w-[58%]">
+    <div className="flex h-full flex-col justify-between pb-6">
+      <section className="relative flex min-h-[280px] flex-1 items-center overflow-hidden bg-[#F6F4EF]">
+        <div className="pointer-events-none absolute inset-y-0 right-0 w-full opacity-35 lg:w-[58%] lg:opacity-100">
           <img src="/images/p11-hero-fade.png" alt="" className="h-full w-full object-cover object-left" />
         </div>
-        <div className="relative z-10 flex items-center px-8 py-4">
+        <div className="relative z-10 flex items-center px-4 py-6 sm:px-6 lg:px-8 lg:py-4">
           <div className="max-w-lg">
-            <h1 className="text-4xl font-bold leading-none tracking-wide text-[#0B2A22] xl:text-[50px]">{restaurant.name}</h1>
-            <h2 className="mt-2 text-2xl font-bold leading-[1.15] text-[#0B2A22] xl:text-[32px]">
+            <h1 className="text-3xl font-bold leading-none tracking-wide text-[#0B2A22] sm:text-4xl xl:text-[50px]">{restaurant.name}</h1>
+            <h2 className="mt-2 text-xl font-bold leading-[1.15] text-[#0B2A22] sm:text-2xl xl:text-[32px]">
               A culinary experience
               <br />
               that brings people together
@@ -68,8 +68,8 @@ export default async function StorefrontHomePage({ params }: { params: { slug: s
             <p className="mt-3 text-sm leading-relaxed text-[#2F3E39]">
               Authentic flavors, quality ingredients, and a warm atmosphere to share unforgettable moments.
             </p>
-            <div className="mt-5 flex flex-wrap gap-3.5">
-              <Link href={`${base}/menu`} className="rounded-xl bg-[#0B2A22] px-7 py-2.5 text-sm font-semibold text-white transition hover:bg-[#163F34]">
+            <div className="mt-5 flex flex-wrap gap-3">
+              <Link href={`${base}/menu`} className="rounded-xl bg-[#0B2A22] px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-[#163F34]">
                 View menu
               </Link>
               <Link href={`${base}/reservations`} className="rounded-xl bg-[#D5E9DE] px-6 py-2.5 text-sm font-semibold text-[#0B2A22] transition hover:bg-[#C3DFD0]">
@@ -80,7 +80,7 @@ export default async function StorefrontHomePage({ params }: { params: { slug: s
         </div>
       </section>
 
-      <section className="px-8 py-3">
+      <section className="px-4 py-4 sm:px-6 lg:px-8 lg:py-3">
         <div className="grid gap-6 lg:grid-cols-12">
           <div className="lg:col-span-8">
             <h3 className="mb-2.5 text-xl font-bold text-[#0B2A22]">Popular dishes</h3>
@@ -136,8 +136,8 @@ export default async function StorefrontHomePage({ params }: { params: { slug: s
         </div>
       </section>
 
-      <section className="px-8">
-        <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl bg-[#E2EFE8] px-7 py-4">
+      <section className="px-4 sm:px-6 lg:px-8">
+        <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl bg-[#E2EFE8] px-5 py-4 sm:px-7">
           <div>
             <h3 className="text-xl font-bold text-[#0B2A22]">Order online</h3>
             <p className="mt-0.5 text-xs text-[#42524C]">Enjoy your favorite dishes wherever you are.</p>
