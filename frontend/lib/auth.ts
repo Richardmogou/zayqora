@@ -10,17 +10,29 @@ export type Me = {
   memberships: Membership[];
 };
 export type RestaurantInfo = {
-  id: string; slug: string; name: string; status: string; country: string; currency: string; timezone: string;
+  id: string;
+  slug: string;
+  name: string;
+  status: string;
+  country: string;
+  currency: string;
+  timezone: string;
+  reservation_opening_hours?: Record<string, [string, string][]> | null;
 };
 
 /** Appel serveur → API, en transmettant le cookie reçu du navigateur. */
 export async function serverFetch<T>(path: string, headers: Record<string, string> = {}): Promise<T | null> {
   const cookie = cookies().toString();
-  if (!cookie) return null;
-  const res = await fetch(`${API_ORIGIN}/api/v1${path}`, { headers: { cookie, ...headers }, cache: "no-store" });
-  if (res.status === 401 || res.status === 403 || res.status === 404) return null;
-  if (!res.ok) throw new Error(`API error ${res.status} on ${path}`);
-  return (await res.json()) as T;
+  if (!cookie && !path.startsWith("/public/")) return null;
+  try {
+    const requestHeaders = { ...headers };
+    if (cookie) requestHeaders.cookie = cookie;
+    const res = await fetch(`${API_ORIGIN}/api/v1${path}`, { headers: requestHeaders, cache: "no-store" });
+    if (!res.ok) return null;
+    return (await res.json()) as T;
+  } catch {
+    return null;
+  }
 }
 
 export const getCurrentUser = () => serverFetch<Me>("/auth/me");
