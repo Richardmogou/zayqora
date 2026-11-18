@@ -60,6 +60,10 @@ export default async function LoginPage({ searchParams }: { searchParams: { next
             <p role="status" className="rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm">{t("auth.expired")}</p>
           )}
           <LoginForm next={next} />
+          <p className="text-center text-sm text-muted-foreground">
+            {t("auth.register") === "Create account" ? "New to ZAYQORA?" : "Nouveau sur ZAYQORA ?"}{" "}
+            <Link href="/register" className="font-medium text-primary hover:underline">{t("auth.register")}</Link>
+          </p>
           <Link href="/" className="block text-center text-sm text-primary hover:underline">{t("auth.backHome")}</Link>
         </div>
       </section>
