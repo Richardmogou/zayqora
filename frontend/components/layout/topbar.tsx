@@ -7,7 +7,7 @@ export function Topbar({ name, role }: { name: string; role: string }) {
   const t = getT();
   const initials = name.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
   return (
-    <header className="flex h-16 items-center justify-end gap-3 border-b border-border bg-card px-4 md:px-6">
+    <header className="flex h-16 items-center justify-end gap-2 border-b border-border bg-card pl-14 pr-4 sm:gap-3 md:px-6">
       <LocaleSwitcher />
       <ThemeToggle />
       <div className="flex items-center gap-2 pl-2">
