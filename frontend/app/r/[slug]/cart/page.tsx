@@ -8,11 +8,49 @@ export default function CartPage({ params }: { params: { slug: string } }) {
   const base = `/r/${params.slug}`;
   const { lines, updateQty, removeLine } = useCartStore();
   const [promo, setPromo] = useState("");
+  const [appliedCoupon, setAppliedCoupon] = useState<string | null>(null);
+  const [discountMinor, setDiscountMinor] = useState(0);
+  const [promoError, setPromoError] = useState("");
+  const [validatingPromo, setValidatingPromo] = useState(false);
   const [mode, setMode] = useState<"pickup" | "delivery">("pickup");
 
   const subtotal = lines.reduce((a, l) => a + l.line_total_minor, 0);
   const deliveryFee = mode === "delivery" ? 400 : 0;
-  const total = subtotal + deliveryFee;
+  const total = Math.max(subtotal + deliveryFee - discountMinor, 0);
+
+  async function handleApplyPromo() {
+    if (!promo.trim()) return;
+    setValidatingPromo(true);
+    setPromoError("");
+    try {
+      const res = await fetch(`/api/v1/cart/validate?slug=${encodeURIComponent(params.slug)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          service_mode: mode,
+          coupon_code: promo.trim(),
+          lines: lines.map((l) => ({
+            menu_item_id: l.menu_item_id,
+            quantity: l.quantity,
+            modifier_ids: l.modifier_ids ?? [],
+          })),
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setAppliedCoupon(null);
+        setDiscountMinor(0);
+        setPromoError(typeof body?.detail === "string" ? body.detail : "Invalid promo code.");
+        return;
+      }
+      setAppliedCoupon(body.coupon_code ?? promo.trim().toUpperCase());
+      setDiscountMinor(body.discount_minor ?? 0);
+    } catch {
+      setPromoError("Could not validate promo code.");
+    } finally {
+      setValidatingPromo(false);
+    }
+  }
 
   if (lines.length === 0) {
     return (
@@ -80,8 +118,21 @@ export default function CartPage({ params }: { params: { slug: string } }) {
               <div className="mt-2 flex gap-2">
                 <input type="text" placeholder="Enter a promo code" value={promo} onChange={(e) => setPromo(e.target.value)}
                   className="h-10 flex-1 rounded-xl border border-border bg-white px-3.5 text-xs text-[#0B2A22] focus:outline-none" />
-                <button type="button" className="rounded-xl bg-[#7E998F] px-5 text-xs font-semibold text-white transition hover:bg-[#0B2A22]">Apply</button>
+                <button
+                  type="button"
+                  disabled={validatingPromo || !promo.trim()}
+                  onClick={() => void handleApplyPromo()}
+                  className="rounded-xl bg-[#7E998F] px-5 text-xs font-semibold text-white transition hover:bg-[#0B2A22] disabled:opacity-50"
+                >
+                  {validatingPromo ? "..." : "Apply"}
+                </button>
               </div>
+              {promoError && <p className="mt-1.5 text-xs font-semibold text-[#B4322A]">{promoError}</p>}
+              {appliedCoupon && (
+                <p className="mt-1.5 text-xs font-semibold text-[#1D6846]">
+                  Promo {appliedCoupon} applied (−&euro;{(discountMinor / 100).toFixed(2)})
+                </p>
+              )}
             </div>
 
             <div>
@@ -100,6 +151,12 @@ export default function CartPage({ params }: { params: { slug: string } }) {
 
             <div className="space-y-2 border-t border-border pt-4 text-sm">
               <div className="flex justify-between text-slate-600"><span>Subtotal</span><span className="font-bold text-[#0B2A22]">&euro;{(subtotal / 100).toFixed(2)}</span></div>
+              {discountMinor > 0 && (
+                <div className="flex justify-between text-[#1D6846]">
+                  <span>Discount ({appliedCoupon})</span>
+                  <span className="font-bold">−&euro;{(discountMinor / 100).toFixed(2)}</span>
+                </div>
+              )}
               <div className="flex justify-between text-slate-600"><span>Fees</span><span className="font-medium text-[#0B2A22]">{mode === "delivery" ? "€4.00" : "Calculated at checkout"}</span></div>
               <div className="flex items-baseline justify-between border-t border-border pt-3">
                 <span className="text-lg font-bold text-[#0B2A22]">Total</span>
@@ -108,7 +165,7 @@ export default function CartPage({ params }: { params: { slug: string } }) {
             </div>
 
             <Link
-              href={`${base}/checkout?mode=${mode}`}
+              href={`${base}/checkout?mode=${mode}${appliedCoupon ? `&coupon=${encodeURIComponent(appliedCoupon)}` : ""}`}
               className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#0B2A22] text-sm font-semibold text-white transition hover:bg-[#163F34]"
             >
               Proceed to checkout <ArrowRight className="h-4 w-4" />

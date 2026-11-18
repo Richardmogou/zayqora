@@ -40,11 +40,14 @@ class Order(Base):
     payment_status: Mapped[str] = mapped_column(String(20), default="pending", server_default="pending")  # pending | paid | failed
     # amounts (minor units)
     subtotal_minor: Mapped[int] = mapped_column(Integer)
+    discount_minor: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     delivery_fee_minor: Mapped[int] = mapped_column(Integer, default=0)
     total_minor: Mapped[int] = mapped_column(Integer)
+    coupon_code: Mapped[str | None] = mapped_column(String(40))
     # status
     status: Mapped[str] = mapped_column(String(30), default="received")
     # received | confirmed | in_preparation | ready | served | cancelled
+    cancellation_reason: Mapped[str | None] = mapped_column(String(300))
     special_instructions: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = _now()
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

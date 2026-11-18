@@ -26,6 +26,7 @@ export default function CheckoutPage({ params }: { params: { slug: string } }) {
   const [mode, setMode] = useState<"delivery" | "pickup" | "dine-in">(
     (searchParams.get("mode") as "delivery" | "pickup") ?? "pickup"
   );
+  const couponCode = searchParams.get("coupon") ?? null;
   const [address, setAddress] = useState("");
   const [payment, setPayment] = useState<"card" | "paypal" | "cash">("card");
   const [terms, setTerms] = useState(true);
@@ -55,6 +56,7 @@ export default function CheckoutPage({ params }: { params: { slug: string } }) {
           service_mode: mode,
           delivery_address: mode === "delivery" ? address : null,
           payment_method: payment,
+          coupon_code: couponCode,
           lines: lines.map((l) => ({
             menu_item_id: l.menu_item_id,
             quantity: l.quantity,

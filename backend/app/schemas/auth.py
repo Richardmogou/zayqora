@@ -9,6 +9,20 @@ class LoginIn(BaseModel):
     password: str = Field(min_length=1, max_length=256)
 
 
+class ForgotPasswordIn(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordIn(BaseModel):
+    token: str = Field(min_length=16, max_length=256)
+    new_password: str = Field(min_length=8, max_length=256)
+
+
+class PasswordResetStatusOut(BaseModel):
+    status: str = "ok"
+    reset_token: str | None = None
+
+
 class RegisterIn(BaseModel):
     full_name: str = Field(min_length=2, max_length=200)
     email: EmailStr
