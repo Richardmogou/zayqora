@@ -11,22 +11,36 @@ export async function generateMetadata({ params }: { params: { slug: string } })
       robots: { index: false, follow: false },
     };
   }
+  const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000").replace(/\/$/, "");
+  const canonicalUrl = `${siteUrl}/r/${restaurant.slug}`;
+  const description =
+    restaurant.tagline ||
+    restaurant.description ||
+    `Browse the menu, place an online order or book a table at ${restaurant.name} on ZAYQORA.`;
+  const ogImage = restaurant.cover_image_url || restaurant.logo_url || undefined;
   return {
     title: `${restaurant.name} — Menu, Online Ordering & Reservations`,
-    description: `Browse the menu, place an online order or book a table at ${restaurant.name} on ZAYQORA.`,
+    description,
+    alternates: { canonical: canonicalUrl },
     openGraph: {
       title: `${restaurant.name} | ZAYQORA`,
-      description: `Discover authentic dishes, online ordering and table reservations at ${restaurant.name}.`,
+      description,
+      url: canonicalUrl,
       type: "website",
+      ...(ogImage ? { images: [{ url: ogImage }] } : {}),
     },
   };
 }
 
 const NAV = [
-  { label: "Home",         href: "" },
-  { label: "Menu",         href: "/menu" },
-  { label: "Cart",         href: "/cart" },
+  { label: "Home", href: "" },
+  { label: "Menu", href: "/menu" },
+  { label: "Cart", href: "/cart" },
   { label: "Book a Table", href: "/reservations" },
+  { label: "Offers", href: "/offers" },
+  { label: "Reviews", href: "/reviews" },
+  { label: "About", href: "/about" },
+  { label: "Contact", href: "/contact" },
 ];
 
 export default async function StorefrontLayout({
@@ -38,12 +52,13 @@ export default async function StorefrontLayout({
 }) {
   const base = `/r/${params.slug}`;
   const restaurant = await serverFetch<RestaurantInfo>(`/public/restaurants/${params.slug}`);
+  const logoSrc = restaurant?.logo_url || "/images/logo-emblem.png";
 
   return (
     <div className="flex min-h-screen flex-col bg-[#F6F4EF] text-[#0B2A22] lg:h-screen lg:overflow-hidden">
       <header className="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-[#0B2A22] px-4 py-3 text-white lg:hidden">
         <Link href={base} className="flex items-center gap-2.5">
-          <img src="/images/logo-emblem.png" alt="" className="h-8 w-8 object-contain" />
+          <img src={logoSrc} alt="" className="h-8 w-8 rounded-md object-contain" />
           <span className="font-serif text-lg tracking-[0.08em] text-[#C4933F]">
             {restaurant?.name ?? "ZAYQORA"}
           </span>
@@ -66,19 +81,21 @@ export default async function StorefrontLayout({
           <div className="relative z-10">
             <div className="flex justify-center pb-7">
               <Link href={base} className="flex flex-col items-center">
-                <img src="/images/logo-emblem.png" alt="" className="h-10 w-10 object-contain" />
-                <span className="mt-1.5 font-serif text-2xl tracking-[0.08em] text-[#C4933F]">
+                <img src={logoSrc} alt="" className="h-10 w-10 rounded-md object-contain" />
+                <span className="mt-1.5 text-center font-serif text-2xl tracking-[0.08em] text-[#C4933F]">
                   {restaurant?.name ?? "ZAYQORA"}
                 </span>
-                <span className="mt-0.5 text-[9px] font-medium uppercase tracking-[0.28em] text-[#C4933F]/80">RESTAURANT</span>
+                <span className="mt-0.5 text-[9px] font-medium uppercase tracking-[0.28em] text-[#C4933F]/80">
+                  {restaurant?.cuisine || "RESTAURANT"}
+                </span>
               </Link>
             </div>
-            <nav className="space-y-1.5">
+            <nav className="space-y-1">
               {NAV.map((item) => (
                 <Link
                   key={item.label}
                   href={`${base}${item.href}`}
-                  className="block rounded-xl px-4 py-2.5 text-sm font-medium text-white/90 transition hover:bg-white/5 hover:text-white"
+                  className="block rounded-xl px-4 py-2 text-sm font-medium text-white/90 transition hover:bg-white/5 hover:text-white"
                 >
                   {item.label}
                 </Link>
@@ -99,9 +116,13 @@ export default async function StorefrontLayout({
           <span className="font-serif text-lg tracking-[0.14em] text-[#C4933F] sm:text-xl">
             {restaurant?.name ?? "ZAYQORA"}
           </span>
-          <div className="flex items-center gap-6 text-xs font-medium text-white/80 sm:gap-8">
-            <Link href={`${base}#contact`} className="hover:text-[#C4933F]">Contact</Link>
+          <div className="flex flex-wrap items-center gap-5 text-xs font-medium text-white/80">
             <Link href={`${base}/menu`} className="hover:text-[#C4933F]">Menu</Link>
+            <Link href={`${base}/offers`} className="hover:text-[#C4933F]">Offers</Link>
+            <Link href={`${base}/reviews`} className="hover:text-[#C4933F]">Reviews</Link>
+            <Link href={`${base}/about`} className="hover:text-[#C4933F]">About</Link>
+            <Link href={`${base}/contact`} className="hover:text-[#C4933F]">Contact</Link>
+            <Link href={`${base}/legal`} className="hover:text-[#C4933F]">Legal &amp; Policies</Link>
           </div>
         </div>
       </footer>

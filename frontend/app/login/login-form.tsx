@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { AlertCircle, Eye, EyeOff, Loader2, Lock, Mail } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
@@ -46,7 +47,12 @@ export function LoginForm({ next }: { next: string }) {
         </div>
       </div>
       <div className="space-y-1.5">
-        <label htmlFor="password" className="text-sm font-medium">{t("auth.password")}</label>
+        <div className="flex items-center justify-between gap-2">
+          <label htmlFor="password" className="text-sm font-medium">{t("auth.password")}</label>
+          <Link href="/forgot-password" className="text-xs font-medium text-primary hover:underline">
+            Forgot password?
+          </Link>
+        </div>
         <div className="relative">
           <Lock className="pointer-events-none absolute left-3 top-3.5 h-4 w-4 text-muted-foreground" aria-hidden />
           <input id="password" name="password" type={show ? "text" : "password"} autoComplete="current-password" required aria-invalid={error ? true : undefined} aria-describedby={describedBy} className={`${inputClass} pr-10`} />

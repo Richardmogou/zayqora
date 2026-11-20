@@ -88,6 +88,19 @@ export function SettingsEditor({
   const [country, setCountry] = useState(restaurant.country);
   const [currency, setCurrency] = useState(restaurant.currency);
   const [timezone, setTimezone] = useState(restaurant.timezone);
+  const [tagline, setTagline] = useState(restaurant.tagline ?? "");
+  const [description, setDescription] = useState(restaurant.description ?? "");
+  const [cuisine, setCuisine] = useState(restaurant.cuisine ?? "");
+  const [phone, setPhone] = useState(restaurant.phone ?? "");
+  const [contactEmail, setContactEmail] = useState(restaurant.contact_email ?? "");
+  const [address, setAddress] = useState(restaurant.address ?? "");
+  const [logoUrl, setLogoUrl] = useState(restaurant.logo_url ?? "");
+  const [coverImageUrl, setCoverImageUrl] = useState(restaurant.cover_image_url ?? "");
+  const [deliveryFee, setDeliveryFee] = useState(((restaurant.delivery_fee_minor ?? 400) / 100).toFixed(2));
+  const [taxRatePct, setTaxRatePct] = useState(((restaurant.tax_rate_bps ?? 1000) / 100).toFixed(2));
+  const [privacyPolicy, setPrivacyPolicy] = useState(restaurant.privacy_policy ?? "");
+  const [termsOfService, setTermsOfService] = useState(restaurant.terms_of_service ?? "");
+  const [refundPolicy, setRefundPolicy] = useState(restaurant.refund_policy ?? "");
   const [status, setStatus] = useState(restaurant.status);
   const [members, setMembers] = useState<TeamMember[]>(initialMembers);
   const [branches, setBranches] = useState<BranchItem[]>(initialBranches);
@@ -114,6 +127,31 @@ export function SettingsEditor({
   const canEditRestaurant = role === "owner" || role === "manager";
   const isOwner = role === "owner";
 
+  async function uploadAsset(file: File, target: "logo" | "cover") {
+    if (!canEditRestaurant) return;
+    setError(null);
+    const formData = new FormData();
+    formData.append("file", file);
+    try {
+      const res = await fetch("/api/v1/menu/images", {
+        method: "POST",
+        headers: { "X-Restaurant-Id": restaurant.id },
+        body: formData,
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.detail ?? "Upload failed.");
+      }
+      const data: { url: string } = await res.json();
+      if (target === "logo") setLogoUrl(data.url);
+      else setCoverImageUrl(data.url);
+      setNotice(`${target === "logo" ? "Logo" : "Cover image"} uploaded. Save changes to apply.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not upload image.");
+    }
+  }
+
   async function saveProfile(e: FormEvent) {
     e.preventDefault();
     if (!canEditRestaurant) return;
@@ -121,15 +159,37 @@ export function SettingsEditor({
     setError(null);
     setNotice(null);
     try {
+      const feeMinor = Math.max(0, Math.round((Number.parseFloat(deliveryFee) || 0) * 100));
+      const taxBps = Math.max(0, Math.min(5000, Math.round((Number.parseFloat(taxRatePct) || 0) * 100)));
       const updated = await api<RestaurantInfo>("/restaurants/me", {
         method: "PATCH",
         headers: { "X-Restaurant-Id": restaurant.id },
-        body: JSON.stringify({ name: name.trim(), country, currency, timezone }),
+        body: JSON.stringify({
+          name: name.trim(),
+          country,
+          currency,
+          timezone,
+          tagline: tagline.trim() || null,
+          description: description.trim() || null,
+          cuisine: cuisine.trim() || null,
+          phone: phone.trim() || null,
+          contact_email: contactEmail.trim() || null,
+          address: address.trim() || null,
+          logo_url: logoUrl.trim() || null,
+          cover_image_url: coverImageUrl.trim() || null,
+          delivery_fee_minor: feeMinor,
+          tax_rate_bps: taxBps,
+          privacy_policy: privacyPolicy.trim() || null,
+          terms_of_service: termsOfService.trim() || null,
+          refund_policy: refundPolicy.trim() || null,
+        }),
       });
       setName(updated.name);
       setCountry(updated.country);
       setCurrency(updated.currency);
       setTimezone(updated.timezone);
+      setDeliveryFee(((updated.delivery_fee_minor ?? 400) / 100).toFixed(2));
+      setTaxRatePct(((updated.tax_rate_bps ?? 1000) / 100).toFixed(2));
       setNotice("Restaurant settings updated.");
       router.refresh();
     } catch (err) {
@@ -374,6 +434,192 @@ export function SettingsEditor({
               </div>
             </div>
 
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold">Cuisine / category</label>
+                <input
+                  type="text"
+                  disabled={!canEditRestaurant}
+                  placeholder="French Bistro, Pizza, Bakery..."
+                  value={cuisine}
+                  onChange={(e) => setCuisine(e.target.value)}
+                  className={inputClass}
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold">Hero tagline</label>
+                <input
+                  type="text"
+                  disabled={!canEditRestaurant}
+                  placeholder="A culinary experience that brings people together"
+                  value={tagline}
+                  onChange={(e) => setTagline(e.target.value)}
+                  className={inputClass}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold">About / restaurant story</label>
+              <textarea
+                rows={3}
+                disabled={!canEditRestaurant}
+                placeholder="Share your story, ingredients and dining philosophy..."
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                className="w-full rounded-xl border border-border bg-card p-3 text-sm focus:border-primary focus:outline-none disabled:opacity-60"
+              />
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold">Phone</label>
+                <input
+                  type="text"
+                  disabled={!canEditRestaurant}
+                  placeholder="+33 1 23 45 67 89"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  className={inputClass}
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold">Contact email</label>
+                <input
+                  type="email"
+                  disabled={!canEditRestaurant}
+                  placeholder="hello@restaurant.com"
+                  value={contactEmail}
+                  onChange={(e) => setContactEmail(e.target.value)}
+                  className={inputClass}
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold">Street address</label>
+                <input
+                  type="text"
+                  disabled={!canEditRestaurant}
+                  placeholder="12 Rue de Rivoli, Paris"
+                  value={address}
+                  onChange={(e) => setAddress(e.target.value)}
+                  className={inputClass}
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold">Delivery fee ({currency})</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  disabled={!canEditRestaurant}
+                  value={deliveryFee}
+                  onChange={(e) => setDeliveryFee(e.target.value)}
+                  className={inputClass}
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold">Tax rate (%)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  max="50"
+                  disabled={!canEditRestaurant}
+                  value={taxRatePct}
+                  onChange={(e) => setTaxRatePct(e.target.value)}
+                  className={inputClass}
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold">Logo URL / upload</label>
+                <input
+                  type="text"
+                  disabled={!canEditRestaurant}
+                  placeholder="/api/v1/public/uploads/..."
+                  value={logoUrl}
+                  onChange={(e) => setLogoUrl(e.target.value)}
+                  className={inputClass}
+                />
+                {canEditRestaurant && (
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) void uploadAsset(f, "logo");
+                    }}
+                    className="block text-xs text-muted-foreground"
+                  />
+                )}
+              </div>
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold">Hero cover URL / upload</label>
+                <input
+                  type="text"
+                  disabled={!canEditRestaurant}
+                  placeholder="/api/v1/public/uploads/..."
+                  value={coverImageUrl}
+                  onChange={(e) => setCoverImageUrl(e.target.value)}
+                  className={inputClass}
+                />
+                {canEditRestaurant && (
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) void uploadAsset(f, "cover");
+                    }}
+                    className="block text-xs text-muted-foreground"
+                  />
+                )}
+              </div>
+            </div>
+
+            <details className="rounded-xl border border-border bg-muted/20 p-3.5">
+              <summary className="cursor-pointer text-xs font-semibold">
+                Legal &amp; cancellation policies (published at /r/{restaurant.slug}/legal)
+              </summary>
+              <div className="mt-3 space-y-3">
+                <div>
+                  <label className="mb-1 block text-xs font-semibold">Privacy policy</label>
+                  <textarea
+                    rows={2}
+                    disabled={!canEditRestaurant}
+                    value={privacyPolicy}
+                    onChange={(e) => setPrivacyPolicy(e.target.value)}
+                    className="w-full rounded-xl border border-border bg-card p-2.5 text-xs focus:border-primary focus:outline-none disabled:opacity-60"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold">Terms of service</label>
+                  <textarea
+                    rows={2}
+                    disabled={!canEditRestaurant}
+                    value={termsOfService}
+                    onChange={(e) => setTermsOfService(e.target.value)}
+                    className="w-full rounded-xl border border-border bg-card p-2.5 text-xs focus:border-primary focus:outline-none disabled:opacity-60"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold">Refund &amp; cancellation policy</label>
+                  <textarea
+                    rows={2}
+                    disabled={!canEditRestaurant}
+                    value={refundPolicy}
+                    onChange={(e) => setRefundPolicy(e.target.value)}
+                    className="w-full rounded-xl border border-border bg-card p-2.5 text-xs focus:border-primary focus:outline-none disabled:opacity-60"
+                  />
+                </div>
+              </div>
+            </details>
+
             {canEditRestaurant && (
               <div className="pt-2">
                 <button
@@ -402,6 +648,31 @@ export function SettingsEditor({
                 {status === "active" ? "Published" : "Draft / Pending"}
               </Badge>
             </div>
+
+            <ul className="space-y-1.5 rounded-xl border border-border bg-muted/15 p-3.5 text-xs">
+              <li className="flex items-center justify-between">
+                <span>Restaurant name &amp; localization</span>
+                <Badge tone={name.trim() ? "success" : "warning"}>{name.trim() ? "Ready" : "Missing"}</Badge>
+              </li>
+              <li className="flex items-center justify-between">
+                <span>Contact details (address / phone / email)</span>
+                <Badge tone={address.trim() || phone.trim() || contactEmail.trim() ? "success" : "warning"}>
+                  {address.trim() || phone.trim() || contactEmail.trim() ? "Ready" : "Recommended"}
+                </Badge>
+              </li>
+              <li className="flex items-center justify-between">
+                <span>Branding (tagline / logo / cover)</span>
+                <Badge tone={tagline.trim() || logoUrl.trim() || coverImageUrl.trim() ? "success" : "warning"}>
+                  {tagline.trim() || logoUrl.trim() || coverImageUrl.trim() ? "Ready" : "Recommended"}
+                </Badge>
+              </li>
+              <li className="flex items-center justify-between">
+                <span>Legal &amp; cancellation policies</span>
+                <Badge tone={privacyPolicy.trim() || refundPolicy.trim() ? "success" : "warning"}>
+                  {privacyPolicy.trim() || refundPolicy.trim() ? "Custom" : "Default"}
+                </Badge>
+              </li>
+            </ul>
 
             <p className="text-xs leading-relaxed text-muted-foreground">
               When published, customers can browse your public website, customize menu items, place online orders and request table reservations.

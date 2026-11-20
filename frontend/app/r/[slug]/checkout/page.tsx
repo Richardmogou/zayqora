@@ -1,10 +1,21 @@
 "use client";
-import { useState, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Banknote, Bike, CreditCard, Lock, ShoppingBag, Utensils, Wallet } from "lucide-react";
 import { useCartStore } from "@/lib/cart-store";
+import { currencySymbol } from "@/lib/currency-context";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+interface CartQuote {
+  currency: string;
+  subtotal_minor: number;
+  discount_minor: number;
+  delivery_fee_minor: number;
+  tax_rate_bps: number;
+  estimated_tax_minor: number;
+  total_minor: number;
+  coupon_code: string | null;
+}
 
 function genIdempotencyKey() {
   return typeof crypto !== "undefined"
@@ -16,28 +27,88 @@ export default function CheckoutPage({ params }: { params: { slug: string } }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { lines, clearCart } = useCartStore();
-
-  // Stable idempotency key for this checkout session — survives re-renders
   const idempotencyKey = useRef(genIdempotencyKey());
 
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [mode, setMode] = useState<"delivery" | "pickup" | "dine-in">(
-    (searchParams.get("mode") as "delivery" | "pickup") ?? "pickup"
+    (searchParams.get("mode") as "delivery" | "pickup" | "dine-in") ?? "pickup"
   );
+  const [tableLabel, setTableLabel] = useState(searchParams.get("table") ?? "");
   const couponCode = searchParams.get("coupon") ?? null;
   const [address, setAddress] = useState("");
   const [payment, setPayment] = useState<"card" | "paypal" | "cash">("card");
   const [terms, setTerms] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [currency, setCurrency] = useState("EUR");
+  const [defaultDeliveryFee, setDefaultDeliveryFee] = useState(400);
+  const [quote, setQuote] = useState<CartQuote | null>(null);
+  const [quoteError, setQuoteError] = useState("");
 
-  const subtotal = lines.reduce((a, l) => a + l.line_total_minor, 0);
-  const deliveryFee = mode === "delivery" ? 400 : 0;
-  const total = subtotal + deliveryFee;
+  useEffect(() => {
+    let active = true;
+    fetch(`/api/v1/public/restaurants/${encodeURIComponent(params.slug)}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!active || !data) return;
+        if (data.currency) setCurrency(data.currency);
+        if (typeof data.delivery_fee_minor === "number") setDefaultDeliveryFee(data.delivery_fee_minor);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [params.slug]);
 
-  const submitLabel = "Place order";
+  useEffect(() => {
+    if (lines.length === 0) {
+      setQuote(null);
+      setQuoteError("");
+      return;
+    }
+    let active = true;
+    setQuoteError("");
+    fetch(`/api/v1/cart/validate?slug=${encodeURIComponent(params.slug)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        service_mode: mode,
+        coupon_code: couponCode,
+        lines: lines.map((l) => ({
+          menu_item_id: l.menu_item_id,
+          quantity: l.quantity,
+          modifier_ids: l.modifier_ids ?? [],
+        })),
+      }),
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body?.detail ?? "Could not validate cart quote.");
+        }
+        return (await res.json()) as CartQuote;
+      })
+      .then((data) => {
+        if (active) setQuote(data);
+      })
+      .catch((caught) => {
+        if (active) {
+          setQuote(null);
+          setQuoteError(caught instanceof Error ? caught.message : "Could not validate cart quote.");
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [lines, mode, couponCode, params.slug]);
+
+  const sym = currencySymbol(quote?.currency ?? currency);
+  const subtotal = quote ? quote.subtotal_minor : lines.reduce((a, l) => a + l.line_total_minor, 0);
+  const deliveryFee = quote ? quote.delivery_fee_minor : mode === "delivery" ? defaultDeliveryFee : 0;
+  const discount = quote ? quote.discount_minor : 0;
+  const total = quote ? quote.total_minor : Math.max(subtotal + deliveryFee - discount, 0);
 
   async function handleConfirm(e: React.FormEvent) {
     e.preventDefault();
@@ -45,7 +116,7 @@ export default function CheckoutPage({ params }: { params: { slug: string } }) {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(`${API}/api/v1/public/orders?slug=${params.slug}`, {
+      const res = await fetch(`/api/v1/public/orders?slug=${encodeURIComponent(params.slug)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -54,6 +125,7 @@ export default function CheckoutPage({ params }: { params: { slug: string } }) {
           customer_phone: phone || null,
           customer_email: email || null,
           service_mode: mode,
+          table_label: mode === "dine-in" ? tableLabel.trim() || null : null,
           delivery_address: mode === "delivery" ? address : null,
           payment_method: payment,
           coupon_code: couponCode,
@@ -70,6 +142,18 @@ export default function CheckoutPage({ params }: { params: { slug: string } }) {
         return;
       }
       const order = await res.json();
+      if (payment !== "cash") {
+        await fetch("/api/v1/payments/checkout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            order_id: order.id,
+            slug: params.slug,
+            provider: payment === "paypal" ? "paypal" : "sandbox",
+            idempotency_key: idempotencyKey.current,
+          }),
+        }).catch(() => {});
+      }
       clearCart(params.slug);
       router.push(`/r/${params.slug}/order-confirmation/${order.id}`);
     } catch {
@@ -118,7 +202,14 @@ export default function CheckoutPage({ params }: { params: { slug: string } }) {
           {mode === "delivery" && (
             <div>
               <h2 className="text-base font-bold text-[#0B2A22]">3. Delivery address</h2>
-              <input type="text" placeholder="Your delivery address" value={address} onChange={(e) => setAddress(e.target.value)} className={`mt-2.5 ${inputClass}`} />
+              <input required type="text" placeholder="Your delivery address" value={address} onChange={(e) => setAddress(e.target.value)} className={`mt-2.5 ${inputClass}`} />
+            </div>
+          )}
+
+          {mode === "dine-in" && (
+            <div>
+              <h2 className="text-base font-bold text-[#0B2A22]">3. Table number</h2>
+              <input type="text" placeholder="e.g. Table 4" value={tableLabel} onChange={(e) => setTableLabel(e.target.value)} className={`mt-2.5 ${inputClass}`} />
             </div>
           )}
 
@@ -134,7 +225,7 @@ export default function CheckoutPage({ params }: { params: { slug: string } }) {
             </div>
             {payment !== "cash" && (
               <p className="mt-2 text-[11px] text-slate-500">
-                Payment processing is not yet integrated. Your order will be recorded and the restaurant will contact you to complete payment.
+                A payment checkout reference will be created securely with your order and verified via provider webhook.
               </p>
             )}
           </div>
@@ -153,26 +244,45 @@ export default function CheckoutPage({ params }: { params: { slug: string } }) {
                       <p className="text-[11px] text-slate-400">{line.modifiers_snapshot.map((m) => m.name).join(", ")}</p>
                     )}
                   </div>
-                  <span className="text-sm font-bold text-[#0B2A22]">&euro;{(line.line_total_minor / 100).toFixed(2)}</span>
+                  <span className="text-sm font-bold text-[#0B2A22]">{sym}{(line.line_total_minor / 100).toFixed(2)}</span>
                 </div>
               ))}
             </div>
             <div className="space-y-2 border-t border-border pt-4 text-xs">
-              <div className="flex justify-between"><span className="font-semibold text-[#0B2A22]">Subtotal</span><span className="font-bold text-[#0B2A22]">&euro;{(subtotal / 100).toFixed(2)}</span></div>
-              <div className="flex justify-between text-slate-600"><span>Delivery fee</span><span className="font-semibold">&euro;{(deliveryFee / 100).toFixed(2)}</span></div>
+              <div className="flex justify-between"><span className="font-semibold text-[#0B2A22]">Subtotal</span><span className="font-bold text-[#0B2A22]">{sym}{(subtotal / 100).toFixed(2)}</span></div>
+              <div className="flex justify-between text-slate-600"><span>Delivery fee</span><span className="font-semibold">{sym}{(deliveryFee / 100).toFixed(2)}</span></div>
+              {discount > 0 && (
+                <div className="flex justify-between text-emerald-700">
+                  <span>Promo {quote?.coupon_code ? `(${quote.coupon_code})` : ""}</span>
+                  <span className="font-semibold">-{sym}{(discount / 100).toFixed(2)}</span>
+                </div>
+              )}
+              {quote && quote.estimated_tax_minor > 0 && (
+                <div className="flex justify-between text-slate-500">
+                  <span>Estimated tax ({(quote.tax_rate_bps / 100).toFixed(1)}% incl.)</span>
+                  <span>{sym}{(quote.estimated_tax_minor / 100).toFixed(2)}</span>
+                </div>
+              )}
             </div>
             <div className="flex items-center justify-between rounded-xl bg-[#DCF0E5] px-4 py-3">
               <span className="text-sm font-bold text-[#0B2A22]">Total</span>
-              <span className="text-lg font-extrabold text-[#0B2A22]">&euro;{(total / 100).toFixed(2)}</span>
+              <span className="text-lg font-extrabold text-[#0B2A22]">{sym}{(total / 100).toFixed(2)}</span>
             </div>
-            {error && <p className="text-xs font-semibold text-red-600">{error}</p>}
+            {quoteError && <p role="alert" className="text-xs font-semibold text-amber-700">{quoteError}</p>}
+            {error && <p role="alert" className="text-xs font-semibold text-red-600">{error}</p>}
             <label className="flex items-center gap-2.5 text-xs text-slate-600">
               <input type="checkbox" checked={terms} onChange={(e) => setTerms(e.target.checked)} className="h-4 w-4 rounded border-slate-400" />
-              <span>I accept the <span className="font-semibold text-[#0B2A22] underline">terms and conditions</span>.</span>
+              <span>
+                I accept the{" "}
+                <Link href={`/r/${params.slug}/legal`} className="font-semibold text-[#0B2A22] underline">
+                  terms and cancellation policy
+                </Link>
+                .
+              </span>
             </label>
-            <button type="submit" disabled={!terms || loading}
+            <button type="submit" disabled={!terms || loading || Boolean(quoteError)}
               className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#C4933F] text-sm font-bold text-[#0B2A22] shadow-sm transition hover:bg-[#b8852e] disabled:opacity-60">
-              <Lock className="h-4 w-4" /> {loading ? "Placing order…" : submitLabel}
+              <Lock className="h-4 w-4" /> {loading ? "Placing order…" : "Place order"}
             </button>
           </div>
         </div>

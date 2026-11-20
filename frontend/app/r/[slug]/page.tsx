@@ -37,11 +37,24 @@ function formatOpeningHours(hours?: Record<string, [string, string][]> | null): 
   return entries.length > 0 ? entries.slice(0, 3).join(" · ") : "By reservation";
 }
 
+interface PublicReviewsSummary {
+  average_rating: number | null;
+  total_reviews: number;
+  reviews: {
+    id: string;
+    customer_name: string;
+    rating: number;
+    comment: string | null;
+    owner_response: string | null;
+  }[];
+}
+
 export default async function StorefrontHomePage({ params }: { params: { slug: string } }) {
   const base = `/r/${params.slug}`;
-  const [restaurant, categories] = await Promise.all([
+  const [restaurant, categories, reviewsSummary] = await Promise.all([
     serverFetch<RestaurantInfo>(`/public/restaurants/${params.slug}`),
     serverFetch<PublicCategory[]>(`/public/restaurants/${params.slug}/menu`),
+    serverFetch<PublicReviewsSummary>(`/public/restaurants/${params.slug}/reviews`),
   ]);
   if (!restaurant) notFound();
 
@@ -50,24 +63,53 @@ export default async function StorefrontHomePage({ params }: { params: { slug: s
   const featuredDishes = [...allDishes]
     .sort((a, b) => (a.is_featured === b.is_featured ? 0 : a.is_featured ? -1 : 1))
     .slice(0, 3);
+  const heroImage = restaurant.cover_image_url || "/images/p11-hero-fade.png";
+  const heroTagline = restaurant.tagline || "A culinary experience that brings people together";
+  const heroDescription =
+    restaurant.description ||
+    "Authentic flavors, quality ingredients, and a warm atmosphere to share unforgettable moments.";
+  const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000").replace(/\/$/, "");
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@type": "Restaurant",
+    name: restaurant.name,
+    url: `${siteUrl}${base}`,
+    ...(restaurant.cuisine ? { servesCuisine: restaurant.cuisine } : {}),
+    ...(restaurant.phone ? { telephone: restaurant.phone } : {}),
+    ...(restaurant.address ? { address: { "@type": "PostalAddress", streetAddress: restaurant.address, addressCountry: restaurant.country } } : {}),
+    ...(restaurant.cover_image_url ? { image: restaurant.cover_image_url } : {}),
+    ...(reviewsSummary && reviewsSummary.total_reviews > 0 && reviewsSummary.average_rating
+      ? {
+          aggregateRating: {
+            "@type": "AggregateRating",
+            ratingValue: reviewsSummary.average_rating,
+            reviewCount: reviewsSummary.total_reviews,
+          },
+        }
+      : {}),
+  };
 
   return (
-    <div className="flex h-full flex-col justify-between pb-6">
-      <section className="relative flex min-h-[280px] flex-1 items-center overflow-hidden bg-[#F6F4EF]">
+    <div className="flex flex-col gap-6 pb-8">
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      <section className="relative flex min-h-[280px] items-center overflow-hidden bg-[#F6F4EF]">
         <div className="pointer-events-none absolute inset-y-0 right-0 w-full opacity-35 lg:w-[58%] lg:opacity-100">
-          <img src="/images/p11-hero-fade.png" alt="" className="h-full w-full object-cover object-left" />
+          <img src={heroImage} alt="" className="h-full w-full object-cover object-left" />
         </div>
-        <div className="relative z-10 flex items-center px-4 py-6 sm:px-6 lg:px-8 lg:py-4">
+        <div className="relative z-10 flex items-center px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
           <div className="max-w-lg">
-            <h1 className="text-3xl font-bold leading-none tracking-wide text-[#0B2A22] sm:text-4xl xl:text-[50px]">{restaurant.name}</h1>
+            {restaurant.cuisine && (
+              <span className="mb-2 inline-block rounded-full bg-[#D5E9DE] px-3 py-1 text-xs font-semibold text-[#0B2A22]">
+                {restaurant.cuisine}
+              </span>
+            )}
+            <h1 className="text-3xl font-bold leading-none tracking-wide text-[#0B2A22] sm:text-4xl xl:text-[50px]">
+              {restaurant.name}
+            </h1>
             <h2 className="mt-2 text-xl font-bold leading-[1.15] text-[#0B2A22] sm:text-2xl xl:text-[32px]">
-              A culinary experience
-              <br />
-              that brings people together
+              {heroTagline}
             </h2>
-            <p className="mt-3 text-sm leading-relaxed text-[#2F3E39]">
-              Authentic flavors, quality ingredients, and a warm atmosphere to share unforgettable moments.
-            </p>
+            <p className="mt-3 text-sm leading-relaxed text-[#2F3E39]">{heroDescription}</p>
             <div className="mt-5 flex flex-wrap gap-3">
               <Link href={`${base}/menu`} className="rounded-xl bg-[#0B2A22] px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-[#163F34]">
                 View menu
@@ -80,7 +122,7 @@ export default async function StorefrontHomePage({ params }: { params: { slug: s
         </div>
       </section>
 
-      <section className="px-4 py-4 sm:px-6 lg:px-8 lg:py-3">
+      <section className="px-4 sm:px-6 lg:px-8">
         <div className="grid gap-6 lg:grid-cols-12">
           <div className="lg:col-span-8">
             <h3 className="mb-2.5 text-xl font-bold text-[#0B2A22]">Popular dishes</h3>
@@ -120,6 +162,20 @@ export default async function StorefrontHomePage({ params }: { params: { slug: s
                   <p className="font-semibold">Opening hours ({restaurant.timezone}):</p>
                   <p className="text-slate-600">{formatOpeningHours(restaurant.reservation_opening_hours)}</p>
                 </div>
+                {restaurant.address && (
+                  <div>
+                    <p className="font-semibold">Address:</p>
+                    <p className="text-slate-600">{restaurant.address}</p>
+                  </div>
+                )}
+                {(restaurant.phone || restaurant.contact_email) && (
+                  <div>
+                    <p className="font-semibold">Contact:</p>
+                    <p className="text-slate-600">
+                      {[restaurant.phone, restaurant.contact_email].filter(Boolean).join(" · ")}
+                    </p>
+                  </div>
+                )}
                 <div>
                   <p className="font-semibold">Country &amp; currency:</p>
                   <p className="text-slate-600">
@@ -136,15 +192,44 @@ export default async function StorefrontHomePage({ params }: { params: { slug: s
         </div>
       </section>
 
+      {reviewsSummary && reviewsSummary.total_reviews > 0 && (
+        <section className="px-4 sm:px-6 lg:px-8">
+          <div className="mb-3 flex items-center justify-between gap-4">
+            <h3 className="text-xl font-bold text-[#0B2A22]">
+              Guest reviews ({reviewsSummary.average_rating?.toFixed(1)} / 5 · {reviewsSummary.total_reviews})
+            </h3>
+            <Link href={`${base}/reviews`} className="text-xs font-semibold text-[#0B2A22] underline hover:text-[#C4933F]">
+              View all &amp; leave a review
+            </Link>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-3">
+            {reviewsSummary.reviews.slice(0, 3).map((review) => (
+              <article key={review.id} className="rounded-2xl border border-border bg-white p-4">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-bold text-[#0B2A22]">{review.customer_name}</p>
+                  <span className="text-xs font-bold text-[#C4933F]">{review.rating}/5</span>
+                </div>
+                {review.comment && <p className="mt-2 text-xs leading-relaxed text-slate-600">{review.comment}</p>}
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
+
       <section className="px-4 sm:px-6 lg:px-8">
         <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl bg-[#E2EFE8] px-5 py-4 sm:px-7">
           <div>
             <h3 className="text-xl font-bold text-[#0B2A22]">Order online</h3>
             <p className="mt-0.5 text-xs text-[#42524C]">Enjoy your favorite dishes wherever you are.</p>
           </div>
-          <Link href={`${base}/menu`} className="rounded-xl bg-[#0B2A22] px-7 py-2.5 text-xs font-semibold text-white transition hover:bg-[#163F34]">
-            Order
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <Link href={`${base}/offers`} className="rounded-xl border border-[#0B2A22]/30 bg-white px-5 py-2.5 text-xs font-semibold text-[#0B2A22] transition hover:bg-[#F6F4EF]">
+              View offers
+            </Link>
+            <Link href={`${base}/menu`} className="rounded-xl bg-[#0B2A22] px-7 py-2.5 text-xs font-semibold text-white transition hover:bg-[#163F34]">
+              Order
+            </Link>
+          </div>
         </div>
       </section>
     </div>
