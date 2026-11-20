@@ -2,7 +2,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -53,16 +53,39 @@ class PasswordResetToken(Base):
     created_at: Mapped[datetime] = now_col()
 
 
+class EmailVerificationToken(Base):
+    __tablename__ = "email_verification_tokens"
+    id: Mapped[uuid.UUID] = pk()
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = now_col()
+
+
 class Restaurant(Base):
     __tablename__ = "restaurants"
     id: Mapped[uuid.UUID] = pk()
     slug: Mapped[str] = mapped_column(String(80), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(200))
-    status: Mapped[str] = mapped_column(String(20), default="pending")  # pending | active | suspended
-    plan: Mapped[str] = mapped_column(String(30), default="growth", server_default="growth")  # starter | growth | professional | enterprise
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    plan: Mapped[str] = mapped_column(String(30), default="growth", server_default="growth")
     country: Mapped[str] = mapped_column(String(2), default="PK")
     currency: Mapped[str] = mapped_column(String(3), default="PKR")
-    timezone: Mapped[str] = mapped_column(String(64), default="Asia/Karachi")  # identifiant IANA
+    timezone: Mapped[str] = mapped_column(String(64), default="Asia/Karachi")
+    tagline: Mapped[str | None] = mapped_column(String(240))
+    description: Mapped[str | None] = mapped_column(Text)
+    cuisine: Mapped[str | None] = mapped_column(String(100))
+    phone: Mapped[str | None] = mapped_column(String(40))
+    contact_email: Mapped[str | None] = mapped_column(String(320))
+    address: Mapped[str | None] = mapped_column(String(300))
+    logo_url: Mapped[str | None] = mapped_column(String(500))
+    cover_image_url: Mapped[str | None] = mapped_column(String(500))
+    delivery_fee_minor: Mapped[int] = mapped_column(Integer, default=400, server_default="400")
+    tax_rate_bps: Mapped[int] = mapped_column(Integer, default=1000, server_default="1000")
+    privacy_policy: Mapped[str | None] = mapped_column(Text)
+    terms_of_service: Mapped[str | None] = mapped_column(Text)
+    refund_policy: Mapped[str | None] = mapped_column(Text)
     reservation_capacity: Mapped[int] = mapped_column(Integer, default=40, server_default="40")
     reservation_duration_minutes: Mapped[int] = mapped_column(Integer, default=90, server_default="90")
     reservation_slot_interval_minutes: Mapped[int] = mapped_column(Integer, default=30, server_default="30")
