@@ -34,6 +34,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip check
       - name: Prepare test schema and verify Alembic single head
         working-directory: backend
         env:
@@ -61,9 +62,15 @@ jobs:
       - name: Install frontend dependencies
         working-directory: frontend
         run: npm ci
+      - name: ESLint check
+        working-directory: frontend
+        run: npx next lint --no-cache
       - name: TypeScript check
         working-directory: frontend
         run: npm run typecheck
+      - name: Dependency audit (high/critical)
+        working-directory: frontend
+        run: npm audit --omit=dev --audit-level=high
       - name: Next.js production build
         working-directory: frontend
         run: npm run build

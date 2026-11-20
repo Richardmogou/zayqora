@@ -16,6 +16,7 @@ app.add_middleware(
 )
 
 _UNSAFE = {"POST", "PUT", "PATCH", "DELETE"}
+_DOCS_PATHS = {"/docs", "/redoc", "/openapi.json"}
 
 
 def _origin_of(value: str | None) -> str | None:
@@ -35,6 +36,7 @@ async def security_and_correlation_middleware(request: Request, call_next):
             response.headers["X-Request-Id"] = request_id
             response.headers["X-Content-Type-Options"] = "nosniff"
             response.headers["X-Frame-Options"] = "DENY"
+            response.headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'"
             return response
 
     response = await call_next(request)
@@ -43,6 +45,8 @@ async def security_and_correlation_middleware(request: Request, call_next):
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
     response.headers.setdefault("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+    if request.url.path not in _DOCS_PATHS:
+        response.headers.setdefault("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
     if settings.is_production:
         response.headers.setdefault("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
     return response
