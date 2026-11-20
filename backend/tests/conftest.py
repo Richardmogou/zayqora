@@ -14,7 +14,7 @@ from sqlalchemy import text  # noqa: E402
 
 import app.models  # noqa: E402,F401
 from app.core.db import Base, SessionLocal, engine  # noqa: E402
-from app.core.rate_limit import limiter  # noqa: E402
+from app.core.rate_limit import limiter, public_limiter  # noqa: E402
 from app.main import app as fastapi_app  # noqa: E402
 
 
@@ -29,6 +29,7 @@ def schema():
 @pytest.fixture(autouse=True)
 def clean_state():
     limiter.clear()
+    public_limiter.clear()
     yield
     with engine.begin() as conn:
         conn.execute(text(

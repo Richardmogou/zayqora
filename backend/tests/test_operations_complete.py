@@ -1,6 +1,10 @@
+import json
+import time
+
 from sqlalchemy import select
 
 from app.core.config import settings
+from app.core.security import sign_webhook_payload
 from app.models import AuditLog, MenuCategory, MenuItem
 from tests.helpers import PASSWORD, add_member, login, make_restaurant, make_user
 
@@ -201,11 +205,11 @@ def test_payments_checkout_webhook_deduplication_and_refund(client, db):
     # 1. Create idempotent payment intent
     pay1 = client.post(
         "/api/v1/payments/checkout",
-        json={"order_id": order["id"], "provider": "stripe", "idempotency_key": "pay-idem-1"},
+        json={"order_id": order["id"], "slug": "bistro", "provider": "stripe", "idempotency_key": "pay-idem-1"},
     )
     pay2 = client.post(
         "/api/v1/payments/checkout",
-        json={"order_id": order["id"], "provider": "stripe", "idempotency_key": "pay-idem-1"},
+        json={"order_id": order["id"], "slug": "bistro", "provider": "stripe", "idempotency_key": "pay-idem-1"},
     )
     assert pay1.status_code == 201
     assert pay1.json()["id"] == pay2.json()["id"]
@@ -218,16 +222,16 @@ def test_payments_checkout_webhook_deduplication_and_refund(client, db):
         "provider_reference": provider_ref,
         "event_type": "payment.succeeded",
     }
-    wh1 = client.post(
-        "/api/v1/payments/webhooks/stripe",
-        json=wh_payload,
-        headers={"X-Webhook-Signature": "sig_verified_2026"},
-    )
-    wh2 = client.post(
-        "/api/v1/payments/webhooks/stripe",
-        json=wh_payload,
-        headers={"X-Webhook-Signature": "sig_verified_2026"},
-    )
+    raw_wh = json.dumps(wh_payload).encode("utf-8")
+    ts = str(int(time.time()))
+    sig = sign_webhook_payload(settings.payment_webhook_secret, ts, raw_wh)
+    wh_headers = {
+        "Content-Type": "application/json",
+        "X-Webhook-Timestamp": ts,
+        "X-Webhook-Signature": sig,
+    }
+    wh1 = client.post("/api/v1/payments/webhooks/stripe", content=raw_wh, headers=wh_headers)
+    wh2 = client.post("/api/v1/payments/webhooks/stripe", content=raw_wh, headers=wh_headers)
     assert wh1.status_code == 200 and wh1.json()["deduplicated"] is False
     assert wh2.status_code == 200 and wh2.json()["deduplicated"] is True
     assert wh1.json()["payment_status"] == "paid"
