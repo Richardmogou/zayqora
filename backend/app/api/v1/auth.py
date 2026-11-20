@@ -7,11 +7,21 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.db import get_db
-from app.core.rate_limit import limiter
+from app.core.rate_limit import enforce_rate_limit, limiter
 from app.core.security import burn_verification_time, hash_password, hash_token, new_session_token, verify_password
-from app.models import AuditLog, Branch, PasswordResetToken, Restaurant, RestaurantMember, User, UserSession
+from app.models import (
+    AuditLog,
+    Branch,
+    EmailVerificationToken,
+    PasswordResetToken,
+    Restaurant,
+    RestaurantMember,
+    User,
+    UserSession,
+)
 from app.permissions.deps import get_current_user
 from app.schemas.auth import (
+    EmailVerificationStatusOut,
     ForgotPasswordIn,
     LoginIn,
     MembershipOut,
@@ -20,7 +30,9 @@ from app.schemas.auth import (
     RegisterIn,
     ResetPasswordIn,
     UserOut,
+    VerifyEmailIn,
 )
+from app.services.email import send_password_reset_email, send_verification_email
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
 
@@ -56,6 +68,12 @@ def _slugify(name: str) -> str:
 
 @router.post("/register", response_model=MeOut, status_code=201)
 def register(body: RegisterIn, request: Request, response: Response, db: Session = Depends(get_db)):
+    enforce_rate_limit(
+        request,
+        "auth_register",
+        max_requests=settings.auth_rate_limit_max_requests,
+        window_seconds=settings.auth_rate_limit_window_seconds,
+    )
     email = body.email.strip().lower()
     if db.scalar(select(User).where(User.email == email)):
         raise HTTPException(status_code=409, detail="Email already registered")
@@ -88,8 +106,15 @@ def register(body: RegisterIn, request: Request, response: Response, db: Session
 
     db.add(Branch(restaurant_id=restaurant.id, name="Main branch", is_default=True))
     db.add(RestaurantMember(restaurant_id=restaurant.id, user_id=user.id, role="owner"))
+    verify_token = new_session_token()
+    db.add(EmailVerificationToken(
+        user_id=user.id,
+        token_hash=hash_token(verify_token),
+        expires_at=datetime.now(timezone.utc) + timedelta(hours=24),
+    ))
     db.add(AuditLog(actor_user_id=user.id, restaurant_id=restaurant.id, action="auth.register"))
     db.commit()
+    send_verification_email(user.email, user.full_name, verify_token)
 
     token = new_session_token()
     db.add(UserSession(
@@ -198,6 +223,12 @@ def refresh_session(
 
 @router.post("/password/forgot", response_model=PasswordResetStatusOut)
 def forgot_password(body: ForgotPasswordIn, request: Request, db: Session = Depends(get_db)):
+    enforce_rate_limit(
+        request,
+        "auth_password_forgot",
+        max_requests=settings.auth_rate_limit_max_requests,
+        window_seconds=settings.auth_rate_limit_window_seconds,
+    )
     email = body.email.strip().lower()
     user = db.scalar(select(User).where(User.email == email, User.is_active.is_(True)))
     raw_token: str | None = None
@@ -210,6 +241,7 @@ def forgot_password(body: ForgotPasswordIn, request: Request, db: Session = Depe
         ))
         db.add(AuditLog(actor_user_id=user.id, action="auth.password.forgot", data={"ip": _client_ip(request)}))
         db.commit()
+        send_password_reset_email(user.email, user.full_name, raw_token)
     else:
         burn_verification_time(email)
     return PasswordResetStatusOut(
@@ -218,8 +250,62 @@ def forgot_password(body: ForgotPasswordIn, request: Request, db: Session = Depe
     )
 
 
+@router.post("/email/verify", response_model=EmailVerificationStatusOut)
+def verify_email(body: VerifyEmailIn, request: Request, db: Session = Depends(get_db)):
+    enforce_rate_limit(
+        request,
+        "auth_email_verify",
+        max_requests=settings.auth_rate_limit_max_requests,
+        window_seconds=settings.auth_rate_limit_window_seconds,
+    )
+    now = datetime.now(timezone.utc)
+    token_row = db.scalar(
+        select(EmailVerificationToken).where(
+            EmailVerificationToken.token_hash == hash_token(body.token.strip())
+        )
+    )
+    if token_row is None or token_row.used_at is not None or token_row.expires_at <= now:
+        raise HTTPException(status_code=400, detail="Invalid or expired verification token")
+
+    user = db.scalar(select(User).where(User.id == token_row.user_id, User.is_active.is_(True)))
+    if user is None:
+        raise HTTPException(status_code=400, detail="Invalid or expired verification token")
+
+    token_row.used_at = now
+    user.email_verified_at = now
+    db.add(AuditLog(actor_user_id=user.id, action="auth.email.verify"))
+    db.commit()
+    return EmailVerificationStatusOut(status="ok", verified=True)
+
+
+@router.post("/email/resend", response_model=EmailVerificationStatusOut)
+def resend_verification_email(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if user.email_verified_at is not None:
+        return EmailVerificationStatusOut(status="ok", verified=True)
+    raw_token = new_session_token()
+    db.add(EmailVerificationToken(
+        user_id=user.id,
+        token_hash=hash_token(raw_token),
+        expires_at=datetime.now(timezone.utc) + timedelta(hours=24),
+    ))
+    db.add(AuditLog(actor_user_id=user.id, action="auth.email.resend"))
+    db.commit()
+    send_verification_email(user.email, user.full_name, raw_token)
+    return EmailVerificationStatusOut(
+        status="ok",
+        verified=False,
+        verification_token=None if settings.is_production else raw_token,
+    )
+
+
 @router.post("/password/reset", response_model=PasswordResetStatusOut)
-def reset_password(body: ResetPasswordIn, db: Session = Depends(get_db)):
+def reset_password(body: ResetPasswordIn, request: Request, db: Session = Depends(get_db)):
+    enforce_rate_limit(
+        request,
+        "auth_password_reset",
+        max_requests=settings.auth_rate_limit_max_requests,
+        window_seconds=settings.auth_rate_limit_window_seconds,
+    )
     now = datetime.now(timezone.utc)
     token_row = db.scalar(
         select(PasswordResetToken).where(PasswordResetToken.token_hash == hash_token(body.token.strip()))

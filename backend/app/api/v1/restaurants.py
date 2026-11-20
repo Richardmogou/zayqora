@@ -16,6 +16,21 @@ def my_restaurant(ctx: TenantContext = Depends(get_tenant)):
     return ctx.restaurant
 
 
+_OPTIONAL_TEXT_FIELDS = {
+    "tagline",
+    "description",
+    "cuisine",
+    "phone",
+    "contact_email",
+    "address",
+    "logo_url",
+    "cover_image_url",
+    "privacy_policy",
+    "terms_of_service",
+    "refund_policy",
+}
+
+
 @router.patch("/me", response_model=RestaurantOut)
 def update_my_restaurant(
     body: RestaurantUpdateIn,
@@ -23,21 +38,30 @@ def update_my_restaurant(
     db: Session = Depends(get_db),
 ):
     r = ctx.restaurant
-    if body.name is not None:
-        r.name = body.name.strip()
-    if body.country is not None:
-        r.country = body.country.upper()
-    if body.currency is not None:
-        r.currency = body.currency.upper()
-    if body.timezone is not None:
-        r.timezone = body.timezone
-    if body.status is not None:
-        r.status = body.status
+    updates = body.model_dump(exclude_unset=True)
+    if updates.get("name") is not None:
+        r.name = updates["name"].strip()
+    if updates.get("country") is not None:
+        r.country = updates["country"].upper()
+    if updates.get("currency") is not None:
+        r.currency = updates["currency"].upper()
+    if updates.get("timezone") is not None:
+        r.timezone = updates["timezone"]
+    if updates.get("status") is not None:
+        r.status = updates["status"]
+    if updates.get("delivery_fee_minor") is not None:
+        r.delivery_fee_minor = updates["delivery_fee_minor"]
+    if updates.get("tax_rate_bps") is not None:
+        r.tax_rate_bps = updates["tax_rate_bps"]
+    for field in _OPTIONAL_TEXT_FIELDS:
+        if field in updates:
+            raw = updates[field]
+            setattr(r, field, raw.strip() if isinstance(raw, str) and raw.strip() else None)
     db.add(AuditLog(
         actor_user_id=ctx.user.id,
         restaurant_id=r.id,
         action="restaurant.update",
-        data={k: v for k, v in body.model_dump().items() if v is not None},
+        data={k: v for k, v in updates.items() if v is not None},
     ))
     db.commit()
     db.refresh(r)
