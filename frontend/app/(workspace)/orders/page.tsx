@@ -5,7 +5,9 @@ import { OrdersTable, type OrderListItem } from "./orders-table";
 
 export default async function OrdersPage() {
   const me = await getCurrentUser();
-  const restaurantId = me?.memberships[0]?.restaurant_id ?? null;
+  const membership = me?.memberships[0];
+  const restaurantId = membership?.restaurant_id ?? null;
+  const role = membership?.role ?? "owner";
   const headers: Record<string, string> = restaurantId ? { "X-Restaurant-Id": restaurantId } : {};
   const [orders, restaurant] = restaurantId
     ? await Promise.all([
@@ -18,7 +20,7 @@ export default async function OrdersPage() {
   return (
     <div className="space-y-6">
       <PageHeader title="Orders" description="Manage and track all your restaurant orders" />
-      <OrdersTable orders={orders ?? []} sym={sym} />
+      <OrdersTable orders={orders ?? []} sym={sym} restaurantId={restaurantId} role={role} />
     </div>
   );
 }

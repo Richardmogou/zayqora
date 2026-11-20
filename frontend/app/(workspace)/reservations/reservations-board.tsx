@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { Calendar, List, Plus, Search, Trash2, Users } from "lucide-react";
+import { Calendar, Columns3, GripVertical, List, Plus, Search, Trash2, Users } from "lucide-react";
 import { Badge, type Tone } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { api } from "@/lib/api";
@@ -28,6 +28,32 @@ const STATUS_TONE: Record<string, Tone> = {
   cancelled: "danger",
   no_show: "danger",
 };
+
+const RESERVATION_COLUMNS: { status: string; label: string; tone: Tone }[] = [
+  { status: "pending", label: "Pending", tone: "warning" },
+  { status: "confirmed", label: "Confirmed", tone: "success" },
+  { status: "seated", label: "Seated", tone: "info" },
+  { status: "completed", label: "Completed", tone: "success" },
+  { status: "cancelled", label: "Cancelled", tone: "danger" },
+  { status: "no_show", label: "No-show", tone: "danger" },
+];
+
+const RESERVATION_TRANSITIONS: Record<string, string[]> = {
+  pending: ["confirmed", "cancelled"],
+  confirmed: ["seated", "cancelled", "no_show"],
+  seated: ["completed", "cancelled"],
+  completed: [],
+  cancelled: [],
+  no_show: [],
+};
+
+const STATUS_EDITOR_ROLES = new Set(["owner", "manager", "waiter"]);
+
+function canMoveReservation(from: string, to: string, role: string): boolean {
+  if (!STATUS_EDITOR_ROLES.has(role)) return false;
+  if (role === "waiter" && to !== "seated" && to !== "completed") return false;
+  return (RESERVATION_TRANSITIONS[from] ?? []).includes(to);
+}
 
 const TABLES = [
   "",
@@ -81,12 +107,14 @@ export function ReservationsBoard({
   const [allDates, setAllDates] = useState(false);
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [search, setSearch] = useState("");
-  const [viewMode, setViewMode] = useState<"list" | "calendar">("list");
+  const [viewMode, setViewMode] = useState<"list" | "calendar" | "kanban">("list");
   const [reservations, setReservations] = useState<ReservationItem[]>(initialReservations);
   const [loading, setLoading] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [error, setError] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [draggedId, setDraggedId] = useState<string | null>(null);
+  const [dragOverStatus, setDragOverStatus] = useState<string | null>(null);
 
   const [newCustomer, setNewCustomer] = useState("");
   const [newPhone, setNewPhone] = useState("");
@@ -168,6 +196,24 @@ export function ReservationsBoard({
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not assign table.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function handleStatusChange(resId: string, nextStatus: string) {
+    setBusyId(resId);
+    setError("");
+    try {
+      const updated = await api<ReservationItem>(`/reservations/${resId}/status`, {
+        method: "PATCH",
+        headers: { "X-Restaurant-Id": restaurantId },
+        body: JSON.stringify({ status: nextStatus }),
+      });
+      setReservations((prev) => prev.map((item) => (item.id === resId ? updated : item)));
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not update reservation status.");
     } finally {
       setBusyId(null);
     }
@@ -320,6 +366,15 @@ export function ReservationsBoard({
             >
               <Calendar className="h-3.5 w-3.5" /> Calendar view
             </button>
+            <button
+              type="button"
+              onClick={() => setViewMode("kanban")}
+              className={`inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold transition ${
+                viewMode === "kanban" ? "bg-primary text-primary-foreground" : "hover:bg-muted"
+              }`}
+            >
+              <Columns3 className="h-3.5 w-3.5" /> Kanban
+            </button>
           </div>
 
           {canEdit && (
@@ -430,7 +485,9 @@ export function ReservationsBoard({
         </Card>
       )}
 
-      {viewMode === "calendar" ? (
+      {viewMode === "kanban" ? (
+        renderKanban()
+      ) : viewMode === "calendar" ? (
         <div className="grid gap-6 lg:grid-cols-12">
           <Card title="Daily timeline" className="lg:col-span-5">
             <div className="space-y-2.5">
@@ -474,6 +531,168 @@ export function ReservationsBoard({
       )}
     </div>
   );
+
+  function renderKanban() {
+    const draggedReservation = draggedId ? reservations.find((item) => item.id === draggedId) ?? null : null;
+    const visibleColumns =
+      statusFilter === "ALL"
+        ? RESERVATION_COLUMNS
+        : RESERVATION_COLUMNS.filter((column) => column.status === statusFilter);
+
+    return (
+      <div className="flex gap-4 overflow-x-auto pb-2">
+        {visibleColumns.map((column) => {
+          const columnItems = filtered.filter((reservation) => reservation.status === column.status);
+          const isValidTarget =
+            draggedReservation !== null && canMoveReservation(draggedReservation.status, column.status, role);
+          const isHovered = dragOverStatus === column.status && isValidTarget;
+          return (
+            <section
+              key={column.status}
+              onDragOver={(e) => {
+                if (!isValidTarget) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "move";
+                setDragOverStatus(column.status);
+              }}
+              onDragLeave={(e) => {
+                if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+                if (dragOverStatus === column.status) setDragOverStatus(null);
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                const reservationId = e.dataTransfer.getData("text/plain") || draggedId;
+                setDraggedId(null);
+                setDragOverStatus(null);
+                if (!reservationId) return;
+                const target = reservations.find((item) => item.id === reservationId);
+                if (!target || !canMoveReservation(target.status, column.status, role)) return;
+                void handleStatusChange(reservationId, column.status);
+              }}
+              className={`flex min-h-[24rem] w-72 shrink-0 flex-col rounded-xl border p-3 transition ${
+                isHovered
+                  ? "border-primary bg-primary/10 ring-2 ring-primary/40"
+                  : isValidTarget
+                    ? "border-primary/40 bg-primary/5"
+                    : "border-border bg-muted/25"
+              }`}
+            >
+              <div className="mb-3 flex items-center justify-between gap-2 px-1">
+                <Badge tone={column.tone}>{column.label}</Badge>
+                <span className="rounded-full bg-card px-2 py-0.5 text-xs font-semibold text-muted-foreground">
+                  {columnItems.length}
+                </span>
+              </div>
+
+              <div className="flex-1 space-y-2.5">
+                {loading ? (
+                  <div className="rounded-xl border border-dashed border-border/70 px-3 py-8 text-center text-xs text-muted-foreground">
+                    Loading bookings...
+                  </div>
+                ) : columnItems.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-border/70 px-3 py-8 text-center text-xs text-muted-foreground">
+                    {isValidTarget ? "Drop booking here" : "No bookings"}
+                  </div>
+                ) : (
+                  columnItems.map((reservation) => {
+                    const canDrag =
+                      busyId !== reservation.id &&
+                      RESERVATION_COLUMNS.some((target) =>
+                        canMoveReservation(reservation.status, target.status, role)
+                      );
+                    return (
+                      <article
+                        key={reservation.id}
+                        draggable={canDrag}
+                        onDragStart={(e) => {
+                          if (!canDrag) return;
+                          e.dataTransfer.setData("text/plain", reservation.id);
+                          e.dataTransfer.effectAllowed = "move";
+                          setDraggedId(reservation.id);
+                        }}
+                        onDragEnd={() => {
+                          setDraggedId(null);
+                          setDragOverStatus(null);
+                        }}
+                        className={`rounded-xl border border-border bg-card p-3.5 shadow-sm transition ${
+                          canDrag ? "cursor-grab active:cursor-grabbing hover:border-primary/40" : ""
+                        } ${busyId === reservation.id || draggedId === reservation.id ? "opacity-50" : ""}`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-1.5 text-xs font-semibold text-primary">
+                            {canDrag && <GripVertical className="h-3.5 w-3.5 text-muted-foreground" />}
+                            <span>
+                              {allDates ? `${formatDate(reservation.reserved_at)} · ` : ""}
+                              {formatTime(reservation.reserved_at)}
+                            </span>
+                          </div>
+                          <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs font-semibold">
+                            <Users className="h-3 w-3 text-primary" /> {reservation.guests}
+                          </span>
+                        </div>
+
+                        <p className="mt-1.5 text-sm font-semibold">{reservation.customer_name}</p>
+                        {(reservation.customer_phone || reservation.customer_email) && (
+                          <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                            {reservation.customer_phone ?? reservation.customer_email}
+                          </p>
+                        )}
+                        {reservation.notes && (
+                          <p className="mt-2 rounded-lg bg-muted/50 px-2.5 py-1.5 text-xs text-muted-foreground">
+                            {reservation.notes}
+                          </p>
+                        )}
+
+                        <div className="mt-2.5">
+                          {canEdit ? (
+                            <select
+                              disabled={busyId === reservation.id}
+                              value={reservation.table_label ?? ""}
+                              onChange={(e) => void handleAssignTable(reservation.id, e.target.value)}
+                              className="h-8 w-full rounded-lg border border-border bg-card px-2 text-xs font-medium focus:outline-none"
+                            >
+                              {TABLES.map((t) => (
+                                <option key={t || "unassigned"} value={t}>
+                                  {t || "Assign table…"}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <p className="text-xs text-muted-foreground">{reservation.table_label ?? "Unassigned"}</p>
+                          )}
+                        </div>
+
+                        <div className="mt-3 flex items-center justify-between gap-2 border-t border-border pt-2.5">
+                          <ReservationActions
+                            reservationId={reservation.id}
+                            restaurantId={restaurantId}
+                            status={reservation.status}
+                            role={role}
+                            onUpdated={() => void reload()}
+                          />
+                          {canEdit && (
+                            <button
+                              type="button"
+                              disabled={busyId === reservation.id}
+                              onClick={() => void handleDelete(reservation.id)}
+                              title="Delete reservation"
+                              className="rounded-lg p-1.5 text-danger hover:bg-danger/10 disabled:opacity-50"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </article>
+                    );
+                  })
+                )}
+              </div>
+            </section>
+          );
+        })}
+      </div>
+    );
+  }
 
   function renderTable() {
     return (

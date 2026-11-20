@@ -8,7 +8,8 @@ const NEXT: Record<string, { status: string; label: string }[]> = {
   received: [{ status: "confirmed", label: "Confirm order" }, { status: "in_preparation", label: "Start preparing" }],
   confirmed: [{ status: "in_preparation", label: "Start preparing" }],
   in_preparation: [{ status: "ready", label: "Mark as ready" }],
-  ready: [{ status: "served", label: "Mark as served" }],
+  ready: [{ status: "out_for_delivery", label: "Out for delivery" }, { status: "served", label: "Mark as served" }],
+  out_for_delivery: [{ status: "served", label: "Mark as delivered" }],
 };
 
 export default function OrderStatusActions({ orderId, restaurantId, currentStatus, role }: {
