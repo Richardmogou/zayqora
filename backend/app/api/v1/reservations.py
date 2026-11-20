@@ -2,11 +2,12 @@ import uuid
 from datetime import date as Date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
+from app.core.rate_limit import enforce_rate_limit
 from app.core.security import hash_password
 from app.models import AuditLog, Reservation, ReservationBlock, Restaurant, RestaurantMember, User
 from app.permissions.deps import TenantContext, require_roles
@@ -18,7 +19,9 @@ from app.schemas.reservations import (
     ReservationUpdateIn,
     RESERVATION_STATUSES, RESERVATION_TRANSITIONS,
 )
+from app.services.email import send_reservation_email
 from app.services.notifications import notify_restaurant_staff
+from app.services.realtime import hub
 
 router = APIRouter(prefix="/reservations", tags=["reservations"])
 members_router = APIRouter(prefix="/members", tags=["team"])
@@ -291,8 +294,10 @@ def public_reservation_availability(
 def create_public_reservation(
     body: PublicReservationIn,
     slug: str,
+    request: Request,
     db: Session = Depends(get_db),
 ):
+    enforce_rate_limit(request, "public_reservation_create")
     restaurant = db.scalar(select(Restaurant).where(
         Restaurant.slug == slug, Restaurant.status == "active"
     ).with_for_update())
@@ -332,6 +337,17 @@ def create_public_reservation(
     )
     db.commit()
     db.refresh(reservation)
+    hub.publish(str(restaurant.id), "reservation.created", {"reservation_id": str(reservation.id)})
+    if reservation.customer_email:
+        local_dt = reservation.reserved_at.astimezone(_restaurant_timezone(restaurant))
+        send_reservation_email(
+            reservation.customer_email,
+            reservation.customer_name,
+            restaurant.name,
+            reservation.guests,
+            local_dt.strftime("%Y-%m-%d %H:%M"),
+            reservation.status,
+        )
     return reservation
 
 
@@ -392,6 +408,16 @@ def update_reservation_status(
                     data={"status": body.status}))
     db.commit()
     db.refresh(res)
+    if res.customer_email and body.status in {"confirmed", "cancelled"}:
+        local_dt = res.reserved_at.astimezone(_restaurant_timezone(ctx.restaurant))
+        send_reservation_email(
+            res.customer_email,
+            res.customer_name,
+            ctx.restaurant.name,
+            res.guests,
+            local_dt.strftime("%Y-%m-%d %H:%M"),
+            res.status,
+        )
     return res
 
 

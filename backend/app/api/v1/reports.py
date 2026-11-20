@@ -1,15 +1,15 @@
 import csv
 import io
 from collections import defaultdict
-from datetime import datetime, time, timedelta, timezone
+from datetime import date as Date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
-from app.models import AuditLog, Order, OrderLine, Reservation
+from app.models import AuditLog, Expense, Order, OrderLine, Refund, Reservation
 from app.permissions.deps import TenantContext, require_roles
 from app.permissions.roles import Role
 from app.schemas.reports import BreakdownOut, DailySalesPointOut, SalesReportOut, TopItemOut
@@ -26,22 +26,40 @@ def _resolve_tz(tz_name: str) -> ZoneInfo:
         return ZoneInfo("UTC")
 
 
-def _compute_sales_report(db: Session, ctx: TenantContext, period: str) -> SalesReportOut:
+def _compute_sales_report(
+    db: Session,
+    ctx: TenantContext,
+    period: str,
+    start_date_str: str | None = None,
+    end_date_str: str | None = None,
+) -> SalesReportOut:
     restaurant = ctx.restaurant
     tz = _resolve_tz(restaurant.timezone)
     today_local = datetime.now(timezone.utc).astimezone(tz).date()
 
-    if period == "today":
-        days_count = 1
-    elif period == "30d":
-        days_count = 30
+    if start_date_str and end_date_str:
+        try:
+            start_day = Date.fromisoformat(start_date_str)
+            end_day = Date.fromisoformat(end_date_str)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="Dates must use YYYY-MM-DD") from exc
+        if end_day < start_day or (end_day - start_day).days > 366:
+            raise HTTPException(status_code=422, detail="Invalid custom date range")
+        period = "custom"
+        days_count = (end_day - start_day).days + 1
     else:
-        period = "7d"
-        days_count = 7
+        if period == "today":
+            days_count = 1
+        elif period == "30d":
+            days_count = 30
+        else:
+            period = "7d"
+            days_count = 7
+        end_day = today_local
+        start_day = end_day - timedelta(days=days_count - 1)
 
-    start_day = today_local - timedelta(days=days_count - 1)
     start_utc = datetime.combine(start_day, time.min, tz).astimezone(timezone.utc)
-    end_utc = datetime.combine(today_local + timedelta(days=1), time.min, tz).astimezone(timezone.utc)
+    end_utc = datetime.combine(end_day + timedelta(days=1), time.min, tz).astimezone(timezone.utc)
 
     orders = db.scalars(
         select(Order).where(
@@ -55,10 +73,31 @@ def _compute_sales_report(db: Session, ctx: TenantContext, period: str) -> Sales
     cancelled_orders = [o for o in orders if o.status == "cancelled"]
 
     gross_sales = sum(o.total_minor for o in valid_orders)
+    discounts_minor = sum(o.discount_minor for o in valid_orders)
     delivery_fees = sum(o.delivery_fee_minor for o in valid_orders)
     subtotal_sum = sum(o.subtotal_minor for o in valid_orders)
-    estimated_tax = round(subtotal_sum * 0.10)
-    net_sales = max(gross_sales - delivery_fees - estimated_tax, 0)
+    estimated_tax = round(subtotal_sum * restaurant.tax_rate_bps / 10000)
+
+    refunds = db.scalars(
+        select(Refund).where(
+            Refund.restaurant_id == restaurant.id,
+            Refund.created_at >= start_utc,
+            Refund.created_at < end_utc,
+        )
+    ).all()
+    refunds_minor = sum(r.amount_minor for r in refunds)
+
+    expenses = db.scalars(
+        select(Expense).where(
+            Expense.restaurant_id == restaurant.id,
+            Expense.incurred_on >= start_day,
+            Expense.incurred_on <= end_day,
+        )
+    ).all()
+    expenses_minor = sum(e.amount_minor for e in expenses)
+
+    net_sales = max(gross_sales - delivery_fees - estimated_tax - refunds_minor, 0)
+    estimated_profit = net_sales - expenses_minor
     cancelled_minor = sum(o.total_minor for o in cancelled_orders)
     avg_order_value = round(gross_sales / len(valid_orders)) if valid_orders else 0
 
@@ -129,12 +168,18 @@ def _compute_sales_report(db: Session, ctx: TenantContext, period: str) -> Sales
 
     return SalesReportOut(
         period=period,
+        start_date=start_day.isoformat(),
+        end_date=end_day.isoformat(),
         currency=restaurant.currency,
         timezone=restaurant.timezone,
         orders_count=len(valid_orders),
         cancelled_orders_count=len(cancelled_orders),
         gross_sales_minor=gross_sales,
+        discounts_minor=discounts_minor,
+        refunds_minor=refunds_minor,
+        expenses_minor=expenses_minor,
         net_sales_minor=net_sales,
+        estimated_profit_minor=estimated_profit,
         delivery_fees_minor=delivery_fees,
         estimated_tax_minor=estimated_tax,
         cancelled_minor=cancelled_minor,
@@ -149,40 +194,48 @@ def _compute_sales_report(db: Session, ctx: TenantContext, period: str) -> Sales
 
 @router.get("/sales", response_model=SalesReportOut)
 def get_sales_report(
-    period: str = Query(default="7d", pattern="^(today|7d|30d)$"),
+    period: str = Query(default="7d", pattern="^(today|7d|30d|custom)$"),
+    start_date: str | None = Query(default=None),
+    end_date: str | None = Query(default=None),
     ctx: TenantContext = Depends(require_roles(*_FINANCE_ROLES)),
     db: Session = Depends(get_db),
 ):
-    return _compute_sales_report(db, ctx, period)
+    return _compute_sales_report(db, ctx, period, start_date, end_date)
 
 
 @router.get("/sales/export")
 def export_sales_csv(
-    period: str = Query(default="7d", pattern="^(today|7d|30d)$"),
+    period: str = Query(default="7d", pattern="^(today|7d|30d|custom)$"),
+    start_date: str | None = Query(default=None),
+    end_date: str | None = Query(default=None),
     ctx: TenantContext = Depends(require_roles(*_FINANCE_ROLES)),
     db: Session = Depends(get_db),
 ):
-    report = _compute_sales_report(db, ctx, period)
+    report = _compute_sales_report(db, ctx, period, start_date, end_date)
     db.add(AuditLog(
         actor_user_id=ctx.user.id,
         restaurant_id=ctx.restaurant.id,
         action="report.sales.export",
         entity_type="restaurant",
         entity_id=str(ctx.restaurant.id),
-        data={"period": period, "currency": report.currency},
+        data={"period": report.period, "start_date": report.start_date, "end_date": report.end_date, "currency": report.currency},
     ))
     db.commit()
 
     buffer = io.StringIO()
     writer = csv.writer(buffer)
     writer.writerow(["ZAYQORA Sales Report", ctx.restaurant.name])
-    writer.writerow(["Period", report.period, "Currency", report.currency, "Timezone", report.timezone])
+    writer.writerow(["Period", report.period, "From", report.start_date, "To", report.end_date, "Currency", report.currency, "Timezone", report.timezone])
     writer.writerow([])
     writer.writerow(["Metric", "Value"])
     writer.writerow(["Orders count", report.orders_count])
     writer.writerow(["Cancelled orders", report.cancelled_orders_count])
     writer.writerow(["Gross sales", f"{report.gross_sales_minor / 100:.2f}"])
+    writer.writerow(["Discounts", f"{report.discounts_minor / 100:.2f}"])
+    writer.writerow(["Refunds", f"{report.refunds_minor / 100:.2f}"])
     writer.writerow(["Net sales", f"{report.net_sales_minor / 100:.2f}"])
+    writer.writerow(["Expenses", f"{report.expenses_minor / 100:.2f}"])
+    writer.writerow(["Estimated profit", f"{report.estimated_profit_minor / 100:.2f}"])
     writer.writerow(["Delivery fees", f"{report.delivery_fees_minor / 100:.2f}"])
     writer.writerow(["Estimated tax", f"{report.estimated_tax_minor / 100:.2f}"])
     writer.writerow(["Average order value", f"{report.average_order_value_minor / 100:.2f}"])

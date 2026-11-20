@@ -70,6 +70,8 @@ class CartQuoteOut(BaseModel):
     subtotal_minor: int
     discount_minor: int
     delivery_fee_minor: int
+    tax_rate_bps: int = 1000
+    estimated_tax_minor: int = 0
     total_minor: int
     coupon_code: str | None = None
     lines: list[CartQuoteLineOut]
@@ -77,6 +79,7 @@ class CartQuoteOut(BaseModel):
 
 class PaymentCheckoutIn(BaseModel):
     order_id: uuid.UUID
+    slug: str = Field(min_length=1, max_length=80)
     provider: Literal["sandbox", "stripe", "paypal"] = "sandbox"
     idempotency_key: str | None = Field(default=None, max_length=64)
 

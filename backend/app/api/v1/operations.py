@@ -1,11 +1,15 @@
 import uuid
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.v1.orders import _DELIVERY_FEE_MINOR, _build_lines, evaluate_coupon
+from app.api.v1.orders import _build_lines, evaluate_coupon
+from app.core.config import settings
 from app.core.db import get_db
+from app.core.rate_limit import enforce_rate_limit
+from app.core.security import verify_webhook_signature
 from app.models import (
     AuditLog,
     Branch,
@@ -186,17 +190,20 @@ def delete_coupon(
 @cart_router.post("/validate", response_model=CartQuoteOut)
 def validate_cart(
     body: CartValidateIn,
+    request: Request,
     slug: str = Query(..., description="Restaurant slug"),
     db: Session = Depends(get_db),
 ):
+    enforce_rate_limit(request, "cart_validate")
     restaurant = db.scalar(select(Restaurant).where(Restaurant.slug == slug, Restaurant.status == "active"))
     if not restaurant:
         raise HTTPException(status_code=404, detail="Restaurant not found")
 
     lines = _build_lines(db, restaurant.id, body.lines)
     subtotal = sum(l.line_total_minor for l in lines)
-    delivery_fee = _DELIVERY_FEE_MINOR if body.service_mode == "delivery" else 0
+    delivery_fee = restaurant.delivery_fee_minor if body.service_mode == "delivery" else 0
     coupon, discount_minor = evaluate_coupon(db, restaurant.id, body.coupon_code, subtotal, delivery_fee)
+    estimated_tax = round(subtotal * restaurant.tax_rate_bps / 10000)
     total = max(subtotal + delivery_fee - discount_minor, 0)
 
     return CartQuoteOut(
@@ -204,6 +211,8 @@ def validate_cart(
         subtotal_minor=subtotal,
         discount_minor=discount_minor,
         delivery_fee_minor=delivery_fee,
+        tax_rate_bps=restaurant.tax_rate_bps,
+        estimated_tax_minor=estimated_tax,
         total_minor=total,
         coupon_code=coupon.code if coupon else None,
         lines=[
@@ -227,17 +236,37 @@ def validate_cart(
 payments_router = APIRouter(prefix="/payments", tags=["payments"])
 
 
+@payments_router.get("", response_model=list[PaymentTransactionOut])
+def list_payment_transactions(
+    order_id: uuid.UUID | None = Query(default=None),
+    ctx: TenantContext = Depends(require_roles(*_VIEWERS)),
+    db: Session = Depends(get_db),
+):
+    stmt = select(PaymentTransaction).where(PaymentTransaction.restaurant_id == ctx.restaurant.id)
+    if order_id is not None:
+        stmt = stmt.where(PaymentTransaction.order_id == order_id)
+    return db.scalars(stmt.order_by(PaymentTransaction.created_at.desc())).all()
+
+
 @payments_router.post("/checkout", response_model=PaymentTransactionOut, status_code=201)
 def create_payment_checkout(
     body: PaymentCheckoutIn,
+    request: Request,
     db: Session = Depends(get_db),
 ):
-    order = db.scalar(select(Order).where(Order.id == body.order_id))
+    enforce_rate_limit(request, "payment_checkout")
+    restaurant = db.scalar(select(Restaurant).where(Restaurant.slug == body.slug, Restaurant.status == "active"))
+    if not restaurant:
+        raise HTTPException(status_code=404, detail="Restaurant not found")
+    order = db.scalar(
+        select(Order).where(Order.id == body.order_id, Order.restaurant_id == restaurant.id)
+    )
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
-    restaurant = db.scalar(select(Restaurant).where(Restaurant.id == order.restaurant_id))
-    if not restaurant or restaurant.status != "active":
-        raise HTTPException(status_code=404, detail="Restaurant not found")
+    if order.status == "cancelled":
+        raise HTTPException(status_code=409, detail="Cannot create payment for a cancelled order")
+    if order.payment_status == "paid":
+        raise HTTPException(status_code=409, detail="Order is already paid")
 
     if body.idempotency_key:
         existing = db.scalar(
@@ -266,14 +295,30 @@ def create_payment_checkout(
 
 
 @payments_router.post("/webhooks/{provider}", response_model=WebhookAckOut)
-def receive_payment_webhook(
+async def receive_payment_webhook(
     provider: str,
-    body: WebhookEventIn,
+    request: Request,
     signature: str | None = Header(default=None, alias="X-Webhook-Signature"),
+    timestamp: str | None = Header(default=None, alias="X-Webhook-Timestamp"),
     db: Session = Depends(get_db),
 ):
-    if not signature or len(signature.strip()) < 8:
-        raise HTTPException(status_code=401, detail="Invalid or missing webhook signature")
+    if settings.is_production and settings.payment_webhook_secret == "dev_webhook_secret_change_me":
+        raise HTTPException(status_code=503, detail="Webhook secret is not configured")
+
+    raw_body = await request.body()
+    if not verify_webhook_signature(
+        settings.payment_webhook_secret,
+        signature,
+        timestamp,
+        raw_body,
+        tolerance_seconds=settings.payment_webhook_tolerance_seconds,
+    ):
+        raise HTTPException(status_code=401, detail="Invalid or expired webhook signature")
+
+    try:
+        body = WebhookEventIn.model_validate_json(raw_body)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.errors()) from exc
 
     existing_event = db.scalar(
         select(PaymentWebhookEvent).where(
@@ -563,8 +608,10 @@ def list_public_reviews(slug: str, db: Session = Depends(get_db)):
 def submit_public_review(
     slug: str,
     body: ReviewIn,
+    request: Request,
     db: Session = Depends(get_db),
 ):
+    enforce_rate_limit(request, "public_review")
     restaurant = db.scalar(select(Restaurant).where(Restaurant.slug == slug, Restaurant.status == "active"))
     if not restaurant:
         raise HTTPException(status_code=404, detail="Restaurant not found")

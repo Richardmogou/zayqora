@@ -26,12 +26,18 @@ class BreakdownOut(BaseModel):
 
 class SalesReportOut(BaseModel):
     period: str
+    start_date: str | None = None
+    end_date: str | None = None
     currency: str
     timezone: str
     orders_count: int
     cancelled_orders_count: int
     gross_sales_minor: int
+    discounts_minor: int = 0
+    refunds_minor: int = 0
+    expenses_minor: int = 0
     net_sales_minor: int
+    estimated_profit_minor: int = 0
     delivery_fees_minor: int
     estimated_tax_minor: int
     cancelled_minor: int

@@ -1,12 +1,13 @@
 from datetime import datetime, timezone
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
+from app.core.rate_limit import enforce_rate_limit
 from app.models import AuditLog, Coupon, MenuItem, Modifier, ModifierGroup, Order, OrderLine, Restaurant
 from app.permissions.deps import TenantContext, require_roles
 from app.permissions.roles import Role
@@ -14,7 +15,9 @@ from app.schemas.orders import (
     ALL_STATUSES, STATUS_TRANSITIONS,
     OrderCancelIn, OrderIn, OrderListOut, OrderOut, OrderStatusIn,
 )
+from app.services.email import send_order_confirmation_email
 from app.services.notifications import notify_restaurant_staff
+from app.services.realtime import hub
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 
@@ -228,6 +231,7 @@ def update_status(
     ))
     db.commit()
     db.refresh(order)
+    hub.publish(str(ctx.restaurant.id), "order.status_changed", {"order_id": str(order.id), "status": order.status})
     return _attach_lines(db, order)
 
 
@@ -264,6 +268,7 @@ def cancel_order(
     ))
     db.commit()
     db.refresh(order)
+    hub.publish(str(ctx.restaurant.id), "order.status_changed", {"order_id": str(order.id), "status": order.status})
     return _attach_lines(db, order)
 
 
@@ -277,9 +282,11 @@ public_router = APIRouter(prefix="/public/orders", tags=["public"])
 @public_router.post("", response_model=OrderOut, status_code=201)
 def create_order(
     body: OrderIn,
+    request: Request,
     slug: str = Query(..., description="Restaurant slug"),
     db: Session = Depends(get_db),
 ):
+    enforce_rate_limit(request, "public_order_create")
     restaurant = db.scalar(select(Restaurant).where(Restaurant.slug == slug, Restaurant.status == "active"))
     if not restaurant:
         raise HTTPException(status_code=404, detail="Restaurant not found")
@@ -297,7 +304,7 @@ def create_order(
     lines = _build_lines(db, restaurant.id, body.lines)
 
     subtotal = sum(l.line_total_minor for l in lines)
-    delivery_fee = _DELIVERY_FEE_MINOR if body.service_mode == "delivery" else 0
+    delivery_fee = restaurant.delivery_fee_minor if body.service_mode == "delivery" else 0
     coupon, discount_minor = evaluate_coupon(db, restaurant.id, body.coupon_code, subtotal, delivery_fee)
     total = max(subtotal + delivery_fee - discount_minor, 0)
     if coupon is not None:
@@ -347,6 +354,16 @@ def create_order(
                 return _attach_lines(db, existing)
         raise
     db.refresh(order)
+    hub.publish(str(restaurant.id), "order.created", {"order_id": str(order.id), "status": order.status})
+    if order.customer_email:
+        send_order_confirmation_email(
+            order.customer_email,
+            order.customer_name,
+            restaurant.name,
+            restaurant.slug,
+            str(order.id),
+            f"{restaurant.currency} {order.total_minor / 100:.2f}",
+        )
     return _attach_lines(db, order)
 
 
@@ -365,9 +382,11 @@ def get_public_order(order_id: uuid.UUID, slug: str = Query(...), db: Session = 
 def cancel_public_order(
     order_id: uuid.UUID,
     body: OrderCancelIn,
+    request: Request,
     slug: str = Query(...),
     db: Session = Depends(get_db),
 ):
+    enforce_rate_limit(request, "public_order_cancel")
     restaurant = db.scalar(select(Restaurant).where(Restaurant.slug == slug, Restaurant.status == "active"))
     if not restaurant:
         raise HTTPException(status_code=404, detail="Restaurant not found")
@@ -394,4 +413,5 @@ def cancel_public_order(
     )
     db.commit()
     db.refresh(order)
+    hub.publish(str(restaurant.id), "order.status_changed", {"order_id": str(order.id), "status": order.status})
     return _attach_lines(db, order)

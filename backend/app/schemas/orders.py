@@ -4,12 +4,13 @@ from pydantic import BaseModel, ConfigDict, Field
 
 # Allowed status transitions: key → set of valid next statuses
 STATUS_TRANSITIONS: dict[str, set[str]] = {
-    "received":       {"confirmed", "in_preparation", "cancelled"},
-    "confirmed":      {"in_preparation", "cancelled"},
-    "in_preparation": {"ready", "cancelled"},
-    "ready":          {"served", "cancelled"},
-    "served":         set(),   # terminal
-    "cancelled":      set(),   # terminal
+    "received":         {"confirmed", "in_preparation", "cancelled"},
+    "confirmed":        {"in_preparation", "cancelled"},
+    "in_preparation":   {"ready", "cancelled"},
+    "ready":            {"out_for_delivery", "served", "cancelled"},
+    "out_for_delivery": {"served", "cancelled"},
+    "served":           set(),
+    "cancelled":        set(),
 }
 ALL_STATUSES = set(STATUS_TRANSITIONS.keys())
 
